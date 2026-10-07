@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+"""decanter — a bottle manager for Windows applications on Apple Silicon macOS.
+
+A bottle is a Wine prefix plus its metadata: which Windows version to pretend to be,
+which environment variables the application needs, which graphics backend to use.
+This is the layer the Mac Wine ecosystem has been missing for non-game software.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+VERSION = "0.1.0"
+
+HOME = Path(os.environ.get("DECANTER_HOME", Path.home() / ".local" / "share" / "decanter"))
+RUNTIME = Path(os.environ.get("DECANTER_RUNTIME", HOME / "runtime"))
+BOTTLES = HOME / "bottles"
+RECIPES = Path(__file__).resolve().parent.parent / "recipes"
+
+WINDOWS_VERSIONS = {"win7": "win7", "win10": "win10", "win11": "win11"}
+
+
+def fail(message: str) -> None:
+    print(f"decanter: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def bottle_dir(name: str) -> Path:
+    return BOTTLES / name
+
+
+def load(name: str) -> dict:
+    meta = bottle_dir(name) / "bottle.json"
+    if not meta.is_file():
+        fail(f"no bottle named {name!r} (see: decanter bottle list)")
+    return json.loads(meta.read_text())
+
+
+def save(meta: dict) -> None:
+    path = bottle_dir(meta["name"]) / "bottle.json"
+    path.write_text(json.dumps(meta, indent=2) + "\n")
+
+
+def runtime_bin() -> Path:
+    binary = RUNTIME / "bin" / "wine"
+    if not binary.is_file():
+        fail(
+            f"no runtime at {RUNTIME}\n"
+            "  build one with: scripts/bootstrap-runtime.sh --dev"
+        )
+    return binary
+
+
+def runtime_variant() -> str:
+    """dev builds move Windows' low addresses above 4 GB; release builds need the entitlement."""
+    marker = RUNTIME / "variant"
+    return marker.read_text().strip() if marker.is_file() else "unknown"
+
+
+def base_env(meta: dict) -> dict:
+    prefix = bottle_dir(meta["name"]) / "prefix"
+    env = os.environ.copy()
+    env["WINEPREFIX"] = str(prefix)
+    env["PATH"] = f"{RUNTIME / 'bin'}:{env.get('PATH', '')}"
+    env["WINEDLLPATH"] = str(RUNTIME / "lib" / "wine" / "aarch64-windows")
+    # Wine's own diagnostics are noise for an application launcher; keep them one flag away.
+    env.setdefault("WINEDEBUG", os.environ.get("DECANTER_WINEDEBUG", "-all"))
+    backend = meta.get("graphics", "wined3d")
+    if backend == "dxmt":
+        env["WINEDLLOVERRIDES"] = "d3d11,dxgi,d3d10core=n,b"
+    env.update(meta.get("env", {}))
+    return env
+
+
+def ensure_prefix(meta: dict) -> None:
+    prefix = bottle_dir(meta["name"]) / "prefix"
+    if (prefix / "drive_c").is_dir():
+        return
+    print(f"decanter: creating prefix for {meta['name']} (first run takes a moment)")
+    subprocess.run([str(runtime_bin()), "wineboot", "-u"], env=base_env(meta), check=False)
+    apply_windows_version(meta)
+
+
+def apply_windows_version(meta: dict) -> None:
+    version = WINDOWS_VERSIONS.get(meta.get("windows", "win10"), "win10")
+    subprocess.run(
+        [str(runtime_bin()), "winecfg", "-v", version],
+        env=base_env(meta),
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+# --- commands -------------------------------------------------------------------
+
+
+def cmd_doctor(args: argparse.Namespace) -> None:
+    print(f"decanter {VERSION}")
+    print(f"  host          {os.uname().machine} / macOS {os.uname().release}")
+    print(f"  home          {HOME}")
+    print(f"  runtime       {RUNTIME} ({runtime_variant()})")
+    if not (RUNTIME / "bin" / "wine").is_file():
+        print("  runtime       MISSING — run scripts/bootstrap-runtime.sh --dev")
+        return
+    version = subprocess.run(
+        [str(RUNTIME / "bin" / "wine"), "--version"], capture_output=True, text=True
+    ).stdout.strip()
+    print(f"  wine          {version}")
+    emulators = RUNTIME / "lib" / "wine" / "aarch64-windows"
+    for dll, what in (("xtajit64.dll", "x86-64 (ARM64EC)"), ("xtajit.dll", "32-bit x86 (WoW64)")):
+        present = "yes" if (emulators / dll).is_file() else "no"
+        print(f"  emulator      {what:<20} {present}")
+    if runtime_variant() == "dev":
+        print("  note          dev runtime: 64-bit Windows programs only")
+    print(f"  bottles       {len(list(BOTTLES.glob('*/bottle.json')))}")
+
+
+def cmd_bottle_create(args: argparse.Namespace) -> None:
+    directory = bottle_dir(args.name)
+    if (directory / "bottle.json").is_file():
+        fail(f"bottle {args.name!r} already exists")
+    directory.mkdir(parents=True, exist_ok=True)
+    meta = {
+        "name": args.name,
+        "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "windows": args.windows,
+        "graphics": args.graphics,
+        "env": {},
+        "programs": [],
+    }
+    save(meta)
+    print(f"created bottle {args.name!r}")
+    if args.init:
+        ensure_prefix(meta)
+
+
+def cmd_bottle_list(args: argparse.Namespace) -> None:
+    names = sorted(p.parent.name for p in BOTTLES.glob("*/bottle.json"))
+    if not names:
+        print("no bottles")
+        return
+    for name in names:
+        meta = load(name)
+        programs = len(meta.get("programs", []))
+        print(f"{name:<20} {meta.get('windows', '?'):<6} {meta.get('graphics', '?'):<8} {programs} program(s)")
+
+
+def cmd_bottle_info(args: argparse.Namespace) -> None:
+    print(json.dumps(load(args.name), indent=2))
+
+
+def cmd_bottle_rm(args: argparse.Namespace) -> None:
+    directory = bottle_dir(args.name)
+    if not (directory / "bottle.json").is_file():
+        fail(f"no bottle named {args.name!r}")
+    if not args.force:
+        answer = input(f"delete bottle {args.name!r} and everything installed in it? [y/N] ")
+        if answer.lower() not in ("y", "yes"):
+            print("kept")
+            return
+    shutil.rmtree(directory)
+    print(f"deleted bottle {args.name!r}")
+
+
+def cmd_run(args: argparse.Namespace) -> None:
+    meta = load(args.bottle)
+    ensure_prefix(meta)
+    executable = args.executable
+    if Path(executable).is_file() and not executable.lower().endswith(".exe"):
+        fail("expected a Windows executable")
+    command = [str(runtime_bin()), executable, *args.arguments]
+    print(f"decanter: {' '.join(command)}")
+    raise SystemExit(subprocess.run(command, env=base_env(meta)).returncode)
+
+
+def cmd_install(args: argparse.Namespace) -> None:
+    meta = load(args.bottle)
+    installer = Path(args.installer).expanduser().resolve()
+    if not installer.is_file():
+        fail(f"no such file: {installer}")
+    ensure_prefix(meta)
+    print(f"decanter: running {installer.name} in bottle {args.bottle!r}")
+    code = subprocess.run([str(runtime_bin()), str(installer)], env=base_env(meta)).returncode
+    if code == 0:
+        meta.setdefault("programs", []).append({"installer": str(installer), "when": time.strftime("%Y-%m-%dT%H:%M:%S")})
+        save(meta)
+    raise SystemExit(code)
+
+
+def cmd_env(args: argparse.Namespace) -> None:
+    meta = load(args.bottle)
+    if not args.assignments:
+        for key, value in sorted(meta.get("env", {}).items()):
+            print(f"{key}={value}")
+        return
+    for assignment in args.assignments:
+        if "=" not in assignment:
+            meta.get("env", {}).pop(assignment, None)
+            continue
+        key, value = assignment.split("=", 1)
+        meta.setdefault("env", {})[key] = value
+    save(meta)
+    print(f"updated {args.bottle!r}")
+
+
+def cmd_recipe_list(args: argparse.Namespace) -> None:
+    for path in sorted(RECIPES.glob("*.json")):
+        recipe = json.loads(path.read_text())
+        status = recipe.get("status", "untested")
+        print(f"{path.stem:<16} [{status:<8}] {recipe.get('description', '')}")
+
+
+def import_into_bottle(meta: dict, source: Path, target: str) -> None:
+    """Put a Windows-visible copy of a downloaded file where the bottle can run it."""
+    destination = bottle_dir(meta["name"]) / "prefix" / "drive_c" / "decanter" / target
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+
+
+def cmd_recipe_apply(args: argparse.Namespace) -> None:
+    path = RECIPES / f"{args.recipe}.json"
+    if not path.is_file():
+        fail(f"no recipe named {args.recipe!r} (see: decanter recipe list)")
+    recipe = json.loads(path.read_text())
+    meta = load(args.bottle)
+    ensure_prefix(meta)
+    print(f"decanter: applying {args.recipe!r} ({recipe.get('status', 'untested')}) to {args.bottle!r}")
+
+    for step in recipe["steps"]:
+        if "download" in step:
+            target = step.get("as") or Path(step["download"]).name
+            print(f"  fetching {step['download']}")
+            subprocess.run(["curl", "-fL", "--retry", "3", "-o", str(HOME / target), step["download"]], check=False)
+            import_into_bottle(meta, HOME / target, target)
+        elif "run" in step:
+            print(f"  running {step['run']} — {step.get('note', '')}".rstrip(" —"))
+            subprocess.run([str(runtime_bin()), step["run"]], env=base_env(meta), check=False)
+        elif "set" in step:
+            key, value = step["set"]
+            meta.setdefault("env", {})[key] = value
+            save(meta)
+        elif "windows" in step:
+            meta["windows"] = step["windows"]
+            save(meta)
+            apply_windows_version(meta)
+    print(f"applied recipe {args.recipe!r} to {args.bottle!r}")
+
+
+# --- argument parsing -----------------------------------------------------------
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="decanter", description=__doc__.splitlines()[0])
+    parser.add_argument("--version", action="version", version=f"decanter {VERSION}")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("doctor", help="check the runtime and report versions").set_defaults(func=cmd_doctor)
+
+    bottle = sub.add_parser("bottle", help="manage bottles")
+    bottle_sub = bottle.add_subparsers(dest="bottle_command", required=True)
+
+    create = bottle_sub.add_parser("create", help="create a bottle")
+    create.add_argument("name")
+    create.add_argument("--windows", default="win10", choices=sorted(WINDOWS_VERSIONS))
+    create.add_argument("--graphics", default="wined3d", choices=["wined3d", "dxmt"])
+    create.add_argument("--init", action="store_true", help="create the prefix now instead of on first use")
+    create.set_defaults(func=cmd_bottle_create)
+
+    bottle_sub.add_parser("list", help="list bottles").set_defaults(func=cmd_bottle_list)
+
+    info = bottle_sub.add_parser("info", help="show a bottle's metadata")
+    info.add_argument("name")
+    info.set_defaults(func=cmd_bottle_info)
+
+    rm = bottle_sub.add_parser("rm", help="delete a bottle")
+    rm.add_argument("name")
+    rm.add_argument("--force", action="store_true")
+    rm.set_defaults(func=cmd_bottle_rm)
+
+    run = sub.add_parser("run", help="run a Windows program in a bottle")
+    run.add_argument("bottle")
+    run.add_argument("executable", help="Windows path, e.g. 'C:\\\\Program Files\\\\Vendor\\\\app.exe'")
+    run.add_argument("arguments", nargs=argparse.REMAINDER)
+    run.set_defaults(func=cmd_run)
+
+    install = sub.add_parser("install", help="run an installer in a bottle")
+    install.add_argument("bottle")
+    install.add_argument("installer")
+    install.set_defaults(func=cmd_install)
+
+    env = sub.add_parser("env", help="get or set a bottle's environment variables")
+    env.add_argument("bottle")
+    env.add_argument("assignments", nargs="*", help="NAME=value to set, NAME to unset")
+    env.set_defaults(func=cmd_env)
+
+    recipe = sub.add_parser("recipe", help="apply a known configuration")
+    recipe_sub = recipe.add_subparsers(dest="recipe_command", required=True)
+    recipe_sub.add_parser("list", help="list recipes").set_defaults(func=cmd_recipe_list)
+    apply = recipe_sub.add_parser("apply", help="apply a recipe to a bottle")
+    apply.add_argument("bottle")
+    apply.add_argument("recipe")
+    apply.set_defaults(func=cmd_recipe_apply)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

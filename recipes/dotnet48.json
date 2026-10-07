@@ -1,0 +1,20 @@
+{
+  "description": ".NET Framework 4.8 runtime, offline installer. Needed by many engineering tools.",
+  "status": "untested",
+  "steps": [
+    {
+      "windows": "win7"
+    },
+    {
+      "download": "https://go.microsoft.com/fwlink/?linkid=2088631",
+      "as": "ndp48-x86-x64-allos-enu.exe"
+    },
+    {
+      "run": "C:\\decanter\\ndp48-x86-x64-allos-enu.exe",
+      "note": "installing .NET under Wine is slow and sometimes needs a retry; check the bottle afterwards"
+    },
+    {
+      "windows": "win10"
+    }
+  ]
+}
