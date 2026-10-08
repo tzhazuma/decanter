@@ -82,7 +82,7 @@ Requires an Apple Silicon Mac with macOS 27, Xcode, and Homebrew.
 ```sh
 git clone https://github.com/tzhazuma/decanter
 cd decanter
-scripts/bootstrap-runtime.sh --dev     # fetch and build the arm64 Wine + FEX runtime
+scripts/bootstrap-runtime.sh --dev     # build the arm64 Wine, FEX and graphics runtime
 scripts/build-app.sh                   # build Decanter.app
 open build/Decanter.app
 ```
