@@ -39,12 +39,69 @@ The entitlement goes **only** on the loader bundle, never on the app or on gener
 tools. The loader ships as a small `.app` inside the main app, which is how CrossOver wraps
 its loader in `wine.app`.
 
-## The cost, stated plainly
+## Is there a free way around it?
 
-An open-source project that wants to ship 32-bit support has to publish builds signed by a
-Developer ID profile carrying this entitlement. That requires a paid Apple Developer Program
-membership and a notarisation step. There is no free path to it that does not ask users to
-disable SIP.
+Short answer: **yes, for one machine, at the cost of weakening that machine's security; and
+no, not for anything you distribute.**
 
-Practical consequence for Decanter's initial target list: **NI Multisim is 32-bit**, so it
-needs this. Everything 64-bit works in the `--dev` build today.
+Measured on the target Mac (macOS 27.2, SIP enabled, `vm.cs_system_enforcement` = 1): a binary
+signed ad-hoc **carrying** the entitlement is killed at exec, while the identical binary
+without it runs. The entitlement is in the signature; AMFI refuses it because no provisioning
+profile authorises it.
+
+```
+$ codesign -f -s - --entitlements cross-arch.plist ./enttest && ./enttest hi
+Killed: 9                      # exit 137
+$ codesign -f -s - ./enttest-clean && ./enttest-clean hi
+control runs fine          # exit 0
+```
+
+### The three routes, cheapest first
+
+**0. Free Apple ID, `-unmanaged` variant — free, expected to fail.** The `-unmanaged`
+entitlement is documented by CodeWeavers as the free-account form of the same thing, and
+Hadron's notes say the capability became self-serve on 2026-09-29. But App IDs and profiles
+in the developer portal are a paid-program feature, and a user on wine-devel reported the
+capability being neither visible nor addable on a free account. Worth five minutes to check;
+do not plan around it.
+
+**1. `amfi-allow` + `csrutil enable --without debug` — the least severe real option.**
+[amfi-allow](https://github.com/Lakr233/amfi-allow) (MIT, tested on macOS 26 and 27) does not
+patch `amfid`. It uses Apple's own mechanism: `AMFIRequirementsManager` reads
+`/Library/Preferences/com.apple.security.coderequirements.plist` and takes its `Entitlements`
+key as the requirement a binary must satisfy to be allowed restricted entitlements. Put a
+binary's `cdhash` in there and AMFI itself permits that one binary. Then the loader can be
+ad-hoc signed with the entitlement and it will run.
+
+It still needs **`csrutil enable --without debug`**, which on Apple Silicon means booting into
+Recovery, accepting Permissive Security, and changing SIP there. That cannot be done from a
+running system — not by a script, and not by an agent.
+
+Two details worth knowing: the allowlist lives in `amfid`'s memory as well as the plist, so it
+must be re-applied after every reboot and every rebuild (a new signature means a new cdhash);
+and the tool deliberately keeps `AllowUnsafeDynamicLinking = false`, because setting
+`Entitlements` alone flips it on and unrestricts every process on the machine.
+
+**2. `csrutil disable` + `amfi_get_out_of_my_way=1` — the blunt one.** Turns off code-signing
+enforcement system-wide. Reported consequences go beyond the intended one: AMFI-off breaks
+DriverKit's own exec path (`ENOEXEC`), and the enforcing alternative kills dexts with
+`CODESIGNING`. This is the option to skip.
+
+### What any of them costs
+
+- Recovery boot and Permissive Security: a physical step at startup, and a reduced-security
+  boot policy that persists.
+- Code-signing enforcement is weakened machine-wide, not just for Wine. `DYLD_INSERT_LIBRARIES`
+  comes closer to being usable against arbitrary processes.
+- It is per-machine. **It does not solve distribution**: asking every user of a tool to weaken
+  their Mac's security is not a release plan.
+- macOS updates may reset or break it.
+
+### Recommendation
+
+For PICO-8 specifically: use the native Mac build, which needs no Wine at all.
+
+For 32-bit Windows software that has no alternative, the honest order is: try route 0, then
+decide between route 1 (free, one machine, weakened) and paying for the Developer Program
+($99/year, no security change, and the only path that can ship to other people).
+
