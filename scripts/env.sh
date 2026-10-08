@@ -10,6 +10,10 @@ DECANTER_WORK="${DECANTER_WORK:-$HOME/.cache/decanter}"
 # off Rosetta, and the PE cross toolchain has to be arm64.
 export PATH="/opt/homebrew/bin:$PATH"
 
+BREW="${BREW:-/opt/homebrew}"
+# Where Hadron's checkout lives: the sources the runtime is built from, and the licences that
+# have to travel with it.
+CHECKOUT="${CHECKOUT:-$DECANTER_WORK/hadron}"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu)}"
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }

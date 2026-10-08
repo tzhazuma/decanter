@@ -21,7 +21,22 @@ from pathlib import Path
 VERSION = "0.1.0"
 
 HOME = Path(os.environ.get("DECANTER_HOME", Path.home() / ".local" / "share" / "decanter"))
-RUNTIME = Path(os.environ.get("DECANTER_RUNTIME", HOME / "runtime"))
+
+
+def default_runtime() -> Path:
+    """Where the runtime is.
+
+    A packaged app carries one inside itself, and that is the one it should use: it is the
+    runtime the app was built and tested against, and it works on a machine with no checkout
+    and no Homebrew. A checkout uses the one `bootstrap-runtime.sh` installed.
+    """
+    bundled = Path(__file__).resolve().parent.parent / "runtime"
+    if (bundled / "bin" / "wine").is_file():
+        return bundled
+    return HOME / "runtime"
+
+
+RUNTIME = Path(os.environ.get("DECANTER_RUNTIME") or default_runtime())
 BOTTLES = HOME / "bottles"
 RECIPES = Path(__file__).resolve().parent.parent / "recipes"
 
@@ -135,7 +150,9 @@ def base_env(meta: dict) -> dict:
     environment rather than inheriting whatever the terminal happens to hold.
     """
     prefix = bottle_dir(meta["name"]) / "prefix"
-    library_path = "/opt/homebrew/lib"
+    # Libraries the runtime carries for itself come first; Homebrew is a fallback for a runtime
+    # built in a checkout, and a packaged one does not need it at all.
+    library_path = str(RUNTIME / "ext" / "lib") + ":/opt/homebrew/lib"
     if runtime_has("mesa-zink/lib/libEGL.1.dylib"):
         library_path = f"{RUNTIME / 'mesa-zink' / 'lib'}:{library_path}"
 

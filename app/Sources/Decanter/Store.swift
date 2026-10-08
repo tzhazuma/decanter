@@ -135,9 +135,15 @@ final class Store: ObservableObject {
         if let override = ProcessInfo.processInfo.environment["DECANTER_CLI"] {
             candidates.append(override)
         }
-        // Beside the .app bundle, then the checkout this app was built in.
-        let bundle = Bundle.main.bundleURL
-        candidates.append(bundle.deletingLastPathComponent()
+        // A packaged app carries the tool it was built with, so the window and the shell
+        // cannot end up running different versions of it.
+        if let bundled = Bundle.main.resourceURL?
+            .deletingLastPathComponent()
+            .appendingPathComponent("SharedSupport/cli/decanter").path {
+            candidates.append(bundled)
+        }
+        // Otherwise: beside the .app bundle, then the checkout this app was built in.
+        candidates.append(Bundle.main.bundleURL.deletingLastPathComponent()
             .appendingPathComponent("decanter").path)
         candidates.append(FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("decanter/cli/decanter").path)
