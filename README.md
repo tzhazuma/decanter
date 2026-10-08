@@ -21,8 +21,9 @@ identity and no Apple Developer account**:
 - **Direct3D 11 reaches the Mac's GPU**: from an emulated x86-64 process, DXMT reports
   `adapter 0: Apple M3 Pro`, creates a device at feature level 11_1, and creates buffers,
   textures and shaders.
-- **Direct3D 12 works too**: vkd3d-proton on KosmicKrisp creates a device at feature level
-  12_0, a command queue and a resource, from the same emulated process.
+- **Direct3D 9, 11 and 12 all work**, each through the layer chosen for it: DXVK on
+  KosmicKrisp for 9 (`Present: ok` on a real swapchain), DXMT straight to Metal for 11
+  (feature level 11_1), vkd3d-proton on KosmicKrisp for 12 (feature level 12_0).
 - The bottle manager creates, lists and runs programs (`cli/decanter run smoke app.exe`).
 
 - 32-bit Windows programs fail with `c000000d`. The emulator is built and installed; the

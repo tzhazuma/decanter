@@ -157,6 +157,32 @@ Two requirements are still unmet, and the evidence narrows the first one a long 
   and carries no Vulkan identity, so neither test succeeds; the code then logs a FIXME and
   **falls back to the first physical device** (`libs/d3d12core/main.c`). So this explains the
   FIXME line and nothing else. The error that stops D3D12 is the next one.
+## Direct3D 9 works too, through DXVK
+
+```
+CreateDevice (HAL): 0x00000000
+Clear: ok
+Present: ok
+CreateVertexBuffer: ok
+```
+
+DXVK's Direct3D 9 on KosmicKrisp, presenting into a real swapchain. Building it takes one
+thing beyond `scripts/build-vulkan.sh`'s default, which disables 9: set `-Denable_d3d9=true`.
+Wiring it takes another: the builtin `d3d9.dll` wins unless the environment says otherwise, so
+`WINEDLLOVERRIDES` needs `d3d9=n` the same way Direct3D 12 needs `d3d12,d3d12core=n`. Without
+it the program gets Wine's wined3d, which here fails earlier and less clearly:
+
+```
+err:wgl:macdrv_egl_surface_create Failed to create an EGL surface
+err:d3d:wined3d_adapter_gl_init Failed to get a GL context for adapter
+Direct3DCreate9: FAILED
+```
+
+DXVK then refused the device for a different reason — `fillModeNonSolid` is marked required in
+`dxvk_device_info.cpp`, and KosmicKrisp does not offer it. `patches/dxvk/` makes it optional.
+The cost is wireframe fill mode on Direct3D 9, which renders solid instead; the alternative
+was no Direct3D 9 at all.
+
 ## Direct3D 12 works
 
 ```

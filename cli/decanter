@@ -115,6 +115,11 @@ def stage_graphics(meta: dict) -> None:
         (RUNTIME / "vkd3d-proton" / "x64" / "d3d12core.dll", system32 / "d3d12core.dll"),
         (RUNTIME / "dxvk" / "x64" / "dxgi.dll", system32 / "dxgi_dxvk.dll"),
     ]
+    # Direct3D 9 through DXVK on Vulkan, replacing Wine's wined3d. Wine installs its own
+    # d3d9.dll into the prefix, so this is another replace rather than fill.
+    d3d9 = RUNTIME / "dxvk" / "x64" / "d3d9.dll"
+    if d3d9.is_file():
+        wants.append((d3d9, system32 / "d3d9.dll"))
     for source, destination in wants:
         if not source.is_file():
             continue
@@ -165,6 +170,10 @@ def base_env(meta: dict) -> dict:
     backend = meta.get("graphics", "wined3d")
     if backend == "dxmt":
         env["WINEDLLOVERRIDES"] = "d3d11,dxgi,d3d10core=n,b"
+    # Direct3D 9 through DXVK: Wine loads its own d3d9 builtin unless told to prefer the
+    # native one, which is the copy the bottle carries.
+    if runtime_has("dxvk/x64/d3d9.dll"):
+        env["WINEDLLOVERRIDES"] = env["WINEDLLOVERRIDES"] + ";d3d9=n"
     if runtime_has("vkd3d-proton/x64/d3d12.dll"):
         env["WINEDLLOVERRIDES"] = env["WINEDLLOVERRIDES"] + ";d3d12,d3d12core=n"
         cache = prefix / "shadercache"
