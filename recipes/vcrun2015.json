@@ -1,6 +1,6 @@
 {
   "description": "Microsoft Visual C++ 2015-2022 redistributable (x64). Most Windows applications need it.",
-  "status": "untested",
+  "status": "tested",
   "steps": [
     {
       "download": "https://aka.ms/vs/17/release/vc_redist.x64.exe",
@@ -8,7 +8,8 @@
     },
     {
       "run": "C:\\decanter\\vc_redist.x64.exe",
-      "note": "accept the licence in the installer window"
+      "args": ["/install", "/quiet", "/norestart"],
+      "note": "installs without a window"
     }
   ]
 }

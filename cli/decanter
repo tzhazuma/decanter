@@ -394,8 +394,12 @@ def cmd_recipe_apply(args: argparse.Namespace) -> None:
             subprocess.run(["curl", "-fL", "--retry", "3", "-o", str(HOME / target), step["download"]], check=False)
             import_into_bottle(meta, HOME / target, target)
         elif "run" in step:
-            print(f"  running {step['run']} — {step.get('note', '')}".rstrip(" —"))
-            subprocess.run([str(runtime_bin()), step["run"]], env=base_env(meta), check=False)
+            # Installers that take their own command line should say so in the recipe, so a
+            # recipe can be non-interactive instead of waiting for someone to click Next.
+            arguments = step.get("args", [])
+            print(f"  running {step['run']} {' '.join(arguments)} — {step.get('note', '')}".rstrip(" —"))
+            subprocess.run([str(runtime_bin()), step["run"], *arguments],
+                           env=base_env(meta), check=False)
         elif "set" in step:
             key, value = step["set"]
             meta.setdefault("env", {})[key] = value
