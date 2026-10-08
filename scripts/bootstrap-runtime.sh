@@ -83,6 +83,15 @@ fetch_and_patch() {
         git -C "$CHECKOUT/src/$name" reset --hard -q 2>/dev/null || true
     fi
     "$CHECKOUT/scripts/fetch.sh" "$name"
+    # A fetch that loses its connection leaves submodules half-checked-out, and the build then
+    # fails much later with a missing CMakeLists.txt. Hadron's script does this too; a network
+    # that drops once in a while makes doing it twice worthwhile.
+    if [[ -d "$CHECKOUT/src/$name/.git" ]]; then
+        for attempt in 1 2 3; do
+            git -C "$CHECKOUT/src/$name" submodule update --init --recursive --filter=blob:none -q 2>/dev/null && break
+            sleep 5
+        done
+    fi
     local patches=("$DECANTER_ROOT/patches/$name"/*.patch)
     if [[ -e ${patches[0]} ]]; then
         log "applying ${#patches[@]} Decanter patch(es) to $name"

@@ -90,9 +90,22 @@ one built for it.
 | OpenGL | Zink on KosmicKrisp — 4.6, above the Mac's own 4.1 |
 | GDI, and everything older | Wine itself |
 
-A new bottle defaults to `--graphics wined3d`; DXMT and the rest are used as builtins
-regardless. The `--graphics dxmt` option exists for the rare application that ships its own
-`d3d11.dll` and would otherwise load that instead.
+A bottle has a **graphics backend**, chosen when it is made and changeable afterwards, in the
+window or with `./cli/decanter bottle set <bottle> --graphics <name>`. Both are real
+configurations, and each says where every Direct3D version goes:
+
+| Backend | Direct3D 9 | 10 and 11 | 12 |
+|---|---|---|---|
+| `dxmt` (default) | DXVK on KosmicKrisp | **DXMT on Metal** | vkd3d-proton |
+| `dxvk` | DXVK on KosmicKrisp | **DXVK on KosmicKrisp** | vkd3d-proton |
+
+`dxmt` is the default because going straight to Metal is the shorter path. `dxvk` is worth
+trying when a program does something DXMT gets wrong — the two are independent
+implementations, and a bug in one is often not in the other. `./cli/decanter bottle info` prints
+the table for a bottle, and so does the window.
+
+Everything older than Direct3D 9 is Wine's own, and Direct3D 12 is always vkd3d-proton: Wine's
+own cannot make a device here, because DXGI belongs to whichever backend is chosen.
 
 D3DMetal — what CrossOver uses for Direct3D 12 on the Mac — cannot be used here. Apple ship it
 as an x86_64-only framework, so an arm64 Wine cannot load it at all. `scripts/fetch-gptk.sh`
@@ -133,6 +146,9 @@ Beyond 32-bit programs:
   and AutoCAD all do; running them through Wine is worse in every way.
 - **The first start of a program is slow** while Wine creates its environment and shaders are
   compiled.
+- **Electron applications are not there yet.** Visual Studio Code for Windows launches and, with
+  `--disable-gpu --no-sandbox --js-flags=--jitless`, its page loads — but the window never
+  paints. `docs/findings.md` has the measurements.
 
 ## Troubleshooting
 
