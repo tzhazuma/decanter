@@ -100,6 +100,9 @@ From the command line:
 ./cli/decanter run work "C:\\Program Files\\Vendor\\app.exe"
 ```
 
+**New here? [docs/guide.md](docs/guide.md)** is everything — building, using, the limits, and
+how to find out what went wrong.
+
 ## Layout
 
 ```
@@ -107,7 +110,7 @@ app/         Decanter.app: the window (SwiftUI), built by scripts/build-app.sh
 scripts/     runtime bootstrap, app build, Apple toolkit import
 cli/         the bottle manager both front ends agree on
 recipes/     known configurations (Visual C++ runtime, .NET)
-docs/        the research behind the design, and what was measured
+docs/        guide.md first, then the research and the measurements behind it
 patches/     our own patches, if any
 ```
 
