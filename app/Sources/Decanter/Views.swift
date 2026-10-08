@@ -25,30 +25,53 @@ struct DecanterApp: App {
 
 struct ContentView: View {
     @EnvironmentObject var store: Store
+    @State private var mode: Mode = .systems
 
     var body: some View {
         NavigationSplitView {
-            VStack(spacing: 0) {                List(selection: $store.selection) {
-                    Section("Bottles") {
-                        ForEach(store.bottles) { bottle in
-                            Label(bottle.name, systemImage: "shippingbox")
-                                .tag(bottle.name)
+            VStack(spacing: 0) {
+                Picker("", selection: $mode) {
+                    ForEach(Mode.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+
+                List(selection: $store.selection) {
+                    if mode == .systems {
+                        Section("Systems") {
+                            ForEach(store.bottles) { bottle in
+                                Label(bottle.name, systemImage: "shippingbox")
+                                    .tag(bottle.name)
+                            }
+                        }
+                    } else {
+                        Section("Exported applications") {
+                            ForEach(store.exported) { entry in
+                                Label(entry.program, systemImage: "macwindow.on.rectangle")
+                                    .tag(entry.path)
+                            }
                         }
                     }
                 }
                 Divider()
                 RuntimeStatusView()
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 220)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 230)
             .toolbar {
                 ToolbarItem {
-                    Button { store.presentNewBottle = true } label: {
-                        Label("New Bottle", systemImage: "plus")
+                    if mode == .systems {
+                        Button { store.presentNewBottle = true } label: {
+                            Label("New System", systemImage: "plus")
+                        }
                     }
                 }
             }
         } detail: {
-            if let bottle = store.selectedBottle {
+            if mode == .applications {
+                ApplicationsView()
+            } else if let bottle = store.selectedBottle {
                 BottleView(bottle: bottle)
             } else {
                 WelcomeView()
@@ -59,6 +82,9 @@ struct ContentView: View {
         }
         .sheet(item: $store.presentAddProgram) { ref in
             AddProgramSheet(bottle: ref.id)
+        }
+        .sheet(item: $store.presentExport) { ref in
+            ExportSheet(bottle: ref.id)
         }
     }
 }
@@ -252,6 +278,12 @@ struct BottleView: View {
                         } label: {
                             Label("Add to the list…", systemImage: "plus")
                         }
+                        Button {
+                            store.presentExport = BottleRef(id: bottle.name)
+                        } label: {
+                            Label("Export as an Application…", systemImage: "shippingbox.and.arrow.backward")
+                        }
+                        .help("Freeze one of these programs into an app that carries its own runtime")
                     }
                 }
 

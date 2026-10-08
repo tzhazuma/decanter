@@ -43,9 +43,29 @@ from; Decanter applies its own patches on top and adds the application-managemen
 
 ## Using it
 
-A **bottle** is an isolated Windows environment: its own `C:` drive, its own registry, its own
-installed programs. Make one per application or per purpose, so that installing something
-cannot disturb anything else.
+There are two shapes of the same thing, and the window has a mode for each.
+
+**A system** is an isolated Windows environment — its own `C:` drive, its own registry — that
+several programs share. Install what you like into it and it is all still there next time.
+Make one per purpose rather than one per program, so that a system is something you can keep
+using.
+
+**An application** is one program frozen out of a system into a bundle of its own, carrying the
+Windows environment it runs in and the runtime that runs it. It needs nothing else afterwards:
+copy it to another Mac, open it, and it works, whether or not Decanter is installed there.
+
+To make one, open a system, add the program to its list, and choose **Export as an
+Application…**. From a shell:
+
+```sh
+./cli/decanter export work 'VS Code' ~/Applications/Code.app
+./cli/decanter launch ~/Applications/Code.app     # what the bundle runs
+```
+
+The space is shared rather than duplicated: the contents are clones of what is already
+installed, so an export costs almost nothing until one of them changes. The accounting can
+look alarming — `du` reports the whole thing — and `ls -l` on the bundle's parent shows what it
+really adds.
 
 In the window: **New Bottle**, then **Install a Windows program…**, then **Add to the list…**
 to keep a shortcut for it. The output panel at the bottom shows what the tool is doing; the

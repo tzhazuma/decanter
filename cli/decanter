@@ -40,6 +40,18 @@ RUNTIME = Path(os.environ.get("DECANTER_RUNTIME") or default_runtime())
 BOTTLES = HOME / "bottles"
 RECIPES = Path(__file__).resolve().parent.parent / "recipes"
 
+# An exported application carries its own runtime and its own single bottle, so everything above
+# points inside the bundle instead. One model, two shapes: a system holds several programs, an
+# exported application holds one and travels with everything it needs.
+def use_bundle(bundle: Path) -> None:
+    global HOME, RUNTIME, BOTTLES, RECIPES
+    HOME = bundle / "Contents" / "SharedSupport"
+    RUNTIME = HOME / "runtime"
+    BOTTLES = HOME / "bottles"
+    recipes = HOME / "recipes"
+    if recipes.is_dir():
+        RECIPES = recipes
+
 WINDOWS_VERSIONS = {"win7": "win7", "win10": "win10", "win11": "win11"}
 
 # Which layer serves which Direct3D version. Wine itself handles everything older than
@@ -73,6 +85,14 @@ def graphics_of(meta: dict) -> str:
 def fail(message: str) -> None:
     print(f"decanter: {message}", file=sys.stderr)
     raise SystemExit(1)
+
+
+def copy_tree(source: Path, destination: Path, clone: bool = True) -> None:
+    """Copy a directory. -c clones where the filesystem allows it, so an export on the same
+    volume shares its blocks with what it came from until one of them changes."""
+    flags = "-Rc" if clone else "-R"
+    if subprocess.run(["cp", flags, str(source) + "/.", str(destination) + "/"]).returncode:
+        fail(f"could not copy {source} to {destination}")
 
 
 def bottle_dir(name: str) -> Path:
@@ -482,6 +502,123 @@ def cmd_shortcut(args: argparse.Namespace) -> None:
         return
 
 
+def cmd_export(args: argparse.Namespace) -> None:
+    """Freeze one program out of a system into an application that carries everything it needs.
+
+    A system is a Windows environment several programs share. An exported application is the
+    other shape: one program, its own Windows environment, and the runtime to run both, in a
+    bundle that can be copied to another Mac and opened.
+    """
+    meta = load(args.bottle)
+    shortcuts = {s["name"]: s for s in meta.get("shortcuts", [])}
+    if args.program not in shortcuts:
+        fail(f"no program named {args.program!r} in {args.bottle!r} "
+             f"(see: decanter shortcut list {args.bottle})")
+    program = shortcuts[args.program]
+
+    prefix = bottle_dir(args.bottle) / "prefix"
+    if not (prefix / "drive_c").is_dir():
+        fail(f"{args.bottle!r} has no Windows environment yet: run something in it first")
+    if not runtime_bin().is_file():
+        fail("no runtime to carry")
+
+    bundle = Path(args.output).expanduser().resolve()
+    if bundle.suffix != ".app":
+        bundle = bundle.with_suffix(".app")
+    if bundle.exists():
+        fail(f"{bundle} already exists")
+
+    support = bundle / "Contents" / "SharedSupport"
+    (bundle / "Contents" / "MacOS").mkdir(parents=True)
+    (bundle / "Contents" / "Resources").mkdir(parents=True)
+    (support / "cli").mkdir(parents=True)
+    (support / "bottles" / meta["name"]).mkdir(parents=True)
+
+    kind = "clones, which share their space" if args.clone else "full copies"
+    print(f"decanter: carrying the runtime, {kind}")
+    copy_tree(RUNTIME, support / "runtime", clone=args.clone)
+    print(f"decanter: carrying the Windows environment, {kind}")
+    (support / "bottles" / meta["name"] / "prefix").mkdir(parents=True)
+    copy_tree(prefix, support / "bottles" / meta["name"] / "prefix", clone=args.clone)
+
+    # One program, not the whole system: the others' shortcuts stay behind, and so do they.
+    exported = dict(meta)
+    exported["shortcuts"] = [program]
+    exported["exported_from"] = str(bottle_dir(args.bottle))
+    (support / "bottles" / meta["name"] / "bottle.json").write_text(
+        json.dumps(exported, indent=2) + "\n")
+
+    tool = support / "cli" / "decanter"
+    tool.write_text(Path(__file__).read_text())
+    tool.chmod(0o755)
+
+    launcher = bundle / "Contents" / "MacOS" / args.program
+    launcher.write_text(
+        "#!/bin/sh\n"
+        "# Runs the program this bundle was made for, with the runtime and the Windows\n"
+        "# environment it carries, wherever the bundle happens to be.\n"
+        'bundle="$(cd "$(dirname "$0")/../.." && pwd)"\n'
+        'exec "$bundle/Contents/SharedSupport/cli/decanter" launch "$bundle"\n')
+    launcher.chmod(0o755)
+
+    identifier = "dev.decanter." + "".join(
+        c if c.isalnum() or c == "-" else "-" for c in args.program.lower())
+    plist_lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+        '<plist version="1.0">',
+        '<dict>',
+        f'    <key>CFBundleName</key><string>{args.program}</string>',
+        f'    <key>CFBundleDisplayName</key><string>{args.program}</string>',
+        f'    <key>CFBundleIdentifier</key><string>{identifier}</string>',
+        f'    <key>CFBundleExecutable</key><string>{args.program}</string>',
+        '    <key>CFBundleIconFile</key><string>decanter</string>',
+        '    <key>CFBundlePackageType</key><string>APPL</string>',
+        '    <key>CFBundleShortVersionString</key><string>1.0</string>',
+        '    <key>CFBundleVersion</key><string>1</string>',
+        '    <key>LSMinimumSystemVersion</key><string>14.0</string>',
+        '    <key>NSHighResolutionCapable</key><true/>',
+        '    <key>NSPrincipalClass</key><string>NSApplication</string>',
+        '</dict>',
+        '</plist>',
+        '',
+    ]
+    (bundle / "Contents" / "Info.plist").write_text("\n".join(plist_lines))
+
+    icon = Path(__file__).resolve().parent.parent / "assets" / "decanter.icns"
+    if icon.is_file():
+        shutil.copy2(icon, bundle / "Contents" / "Resources" / "decanter.icns")
+
+    subprocess.run(["codesign", "--force", "--sign", "-", str(bundle)],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    size = subprocess.run(["du", "-sh", str(bundle)], capture_output=True,
+                          text=True).stdout.split()[0]
+    print(f"exported {args.program!r} to {bundle} ({size})")
+    print("  it carries its own runtime and Windows environment; nothing else is needed")
+
+
+def cmd_launch(args: argparse.Namespace) -> None:
+    """Run what an exported application's bundle says, wherever the bundle is."""
+    bundle = Path(args.bundle).expanduser().resolve()
+    if not (bundle / "Contents" / "SharedSupport").is_dir():
+        fail(f"{bundle} is not a Decanter application")
+    use_bundle(bundle)
+
+    names = sorted(p.parent.name for p in BOTTLES.glob("*/bottle.json"))
+    if len(names) != 1:
+        fail(f"expected one program in {bundle}, found {len(names)}")
+    meta = load(names[0])
+    if not meta.get("shortcuts"):
+        fail(f"{bundle} does not say what to run")
+
+    program = meta["shortcuts"][0]
+    raise SystemExit(subprocess.run(
+        [str(runtime_bin()), program["path"], *program.get("args", [])],
+        env=base_env(meta)).returncode)
+
+
 def cmd_recipe_list(args: argparse.Namespace) -> None:
     for path in sorted(RECIPES.glob("*.json")):
         recipe = json.loads(path.read_text())
@@ -602,6 +739,19 @@ def main() -> None:
     shortcut_suggest.add_argument("bottle")
     shortcut_suggest.add_argument("--limit", type=int, default=40)
     shortcut_suggest.set_defaults(func=cmd_shortcut)
+
+    export = sub.add_parser("export",
+                            help="freeze one program into an application that carries its runtime")
+    export.add_argument("bottle")
+    export.add_argument("program", help="the name of a shortcut in that bottle")
+    export.add_argument("output", help="where to write the .app")
+    export.add_argument("--no-clone", dest="clone", action="store_false",
+                        help="copy rather than clone (a clone shares space, and travels as a copy)")
+    export.set_defaults(func=cmd_export)
+
+    launch = sub.add_parser("launch", help="run an exported application from its own bundle")
+    launch.add_argument("bundle")
+    launch.set_defaults(func=cmd_launch)
 
     recipe = sub.add_parser("recipe", help="apply a known configuration")
     recipe_sub = recipe.add_subparsers(dest="recipe_command", required=True)

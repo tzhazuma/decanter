@@ -33,6 +33,16 @@ struct BottleRef: Identifiable, Hashable {
     var id: String
 }
 
+/// A program frozen into its own application: one program, its own Windows environment, and the
+/// runtime to run both, in a bundle that travels.
+struct Exported: Codable, Hashable, Identifiable {
+    var program: String
+    var path: String
+    var from: String
+    var when: String
+    var id: String { path }
+}
+
 /// Where each Direct3D version goes under a backend. The same table the command line prints, so
 /// the window and the shell say the same thing.
 enum Backend: String, CaseIterable, Identifiable {
@@ -88,6 +98,8 @@ final class Store: ObservableObject {
     @Published var busy: Bool = false
     @Published var presentNewBottle = false
     @Published var presentAddProgram: BottleRef? = nil
+    @Published var presentExport: BottleRef? = nil
+    @Published private(set) var exported: [Exported] = []
 
     private let home: URL
     private let runtimeURL: URL
@@ -109,6 +121,7 @@ final class Store: ObservableObject {
 
     func reload() {
         bottles = loadBottles()
+        exported = loadExported()
         runtime = loadRuntime()
         if selection == nil || !bottles.contains(where: { $0.name == selection }) {
             selection = bottles.first?.name
@@ -127,6 +140,46 @@ final class Store: ObservableObject {
                 return try? decoder.decode(Bottle.self, from: data)
             }
             .sorted { $0.name < $1.name }
+    }
+
+    /// Exported applications are recorded where they went, so the window can list them and show
+    /// them again without searching the disk.
+    private var exportedFile: URL { home.appendingPathComponent("exported.json") }
+
+    private func loadExported() -> [Exported] {
+        guard let data = try? Data(contentsOf: exportedFile),
+              let list = try? JSONDecoder().decode([Exported].self, from: data) else { return [] }
+        return list.filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    private func record(_ entry: Exported) {
+        var list = exported.filter { $0.path != entry.path }
+        list.append(entry)
+        exported = list
+        if let data = try? JSONEncoder().encode(list) {
+            try? data.write(to: exportedFile)
+        }
+    }
+
+    func export(bottle: String, program: String, to path: String) {
+        runTool(["export", bottle, program, path]) { status in
+            guard status == 0 else { return }
+            Task { @MainActor in
+                self.record(Exported(program: program, path: path, from: bottle,
+                                     when: ISO8601DateFormatter().string(from: Date())))
+            }
+        }
+    }
+
+    func forget(_ entry: Exported) {
+        exported = exported.filter { $0.path != entry.path }
+        if let data = try? JSONEncoder().encode(exported) {
+            try? data.write(to: exportedFile)
+        }
+    }
+
+    func reveal(_ path: String) {
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
     }
 
     private func loadRuntime() -> RuntimeInfo? {
