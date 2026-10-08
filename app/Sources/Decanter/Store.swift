@@ -101,6 +101,9 @@ final class Store: ObservableObject {
     @Published var presentExport: BottleRef? = nil
     @Published private(set) var exported: [Exported] = []
 
+    /// The command line tool process while one is running, so it can be stopped.
+    private var running: Process?
+
     private let home: URL
     private let runtimeURL: URL
 
@@ -268,17 +271,25 @@ final class Store: ObservableObject {
             pipe.fileHandleForReading.readabilityHandler = nil
             Task { @MainActor in
                 self?.busy = false
+                self?.running = nil
                 self?.reload()
                 completion?(finished.terminationStatus)
             }
         }
         do {
             try process.run()
+            running = process
         } catch {
             append("decanter: could not run the tool: \(error.localizedDescription)")
             busy = false
             completion?(126)
         }
+    }
+
+    /// Stop a bottle's session — for a program that hangs and never finishes on its own.
+    func stop(bottle: String) {
+        running?.terminate()
+        runTool(["bottle", "kill", bottle])
     }
 
     private func append(_ text: String) {

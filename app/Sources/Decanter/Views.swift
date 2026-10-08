@@ -310,7 +310,7 @@ struct BottleView: View {
             .formStyle(.grouped)
 
             Divider()
-            LogPane()
+            LogPane(bottle: bottle.name)
         }
         .navigationTitle(bottle.name)
     }
@@ -318,6 +318,7 @@ struct BottleView: View {
 
 struct LogPane: View {
     @EnvironmentObject var store: Store
+    let bottle: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -325,6 +326,11 @@ struct LogPane: View {
                 if store.busy { ProgressView().controlSize(.small) }
                 Text("Output").font(.caption).foregroundStyle(.secondary)
                 Spacer()
+                if store.busy {
+                    Button("Stop") { store.stop(bottle: bottle) }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                }
                 Button("Clear") { store.clearLog() }
                     .buttonStyle(.link)
                     .font(.caption)

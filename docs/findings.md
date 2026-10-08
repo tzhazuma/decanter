@@ -362,3 +362,34 @@ Two lessons, and this document has now recorded both more than once. `CGWindowLi
 is not evidence of a window's size — it has been wrong for a native SwiftUI window, for a
 hand-written Win32 window and for this one. And a screenshot is only as good as the geometry it
 was taken with.
+
+## The second VS Code report, and a hang that could not be reproduced
+
+On 2026-10-09 the report came back: VS Code "still" fails — an error appears and no window.
+The run behind it was found still hanging from the night before. Started through the window at
+23:39, its process tree was a main process, a GPU process and a network service — **no renderer,
+no crashpad handler, no log directory, no crash report** — every thread idle. The main process
+had loaded Chromium's resources but had not run the application's JavaScript (no log directory
+was ever created).
+
+Killing that session and running the same command again — same app bundle, same arguments, same
+environment — works, twice in a row: the whole process tree comes up, the window appears and the
+workbench renders. What was checked, so a later attempt need not repeat it:
+
+- **Not Gatekeeper.** The installed app carries quarantine (4,139 attributes) and `spctl`
+  rejects it, but `syspolicyd` scanned the runtime binaries on first launch and allowed them
+  (`GK evaluateScanResult`) — no dialog and no denial, on the night's run or on the retries.
+- **Not a crash.** No `.ips` report and no crashpad dump. The `ReportCrashService` seen at
+  23:39:04 was iStat Menus Menubar, which this machine crashes "6869 times in a row" — its own
+  noise, not ours.
+- **Not the environment.** The window's environment (minimal `PATH`, XQuartz's `DISPLAY`, no
+  `LANG`, `__PYVENV_LAUNCHER__`) was reproduced exactly; it works.
+- **Not `code.lock`, the FEX disk cache, or `start.exe /exec`** — all are shared with the
+  working runs. `start.exe /exec` is Wine's normal fallback when a program needs a different
+  loader, which is every x86-64 launch on this setup (`dlls/ntdll/unix/env.c`).
+- One difference remains unexplained: the hung run had **no crashpad handler**, and its main
+  process briefly became frontmost 35 seconds in with no window to show for it.
+
+If it recurs: the window's **Stop** button (added the same day) kills the bottle's session, and
+a second launch is the workaround. The evidence is in the unified log at 2026-10-08 23:39
+(syspolicyd, launchd, runningboardd, and wine processes 51244–51282).

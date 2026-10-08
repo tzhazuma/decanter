@@ -235,11 +235,11 @@ Fuller versions with evidence: `docs/findings.md`; loader mechanics in
    lose their Vulkan driver (DXMT's D3D10/11 would still work — it goes straight to Metal).
    The local "run from the mounted image" test passed *because* the absolute path happens to
    resolve here. `package-runtime.sh` never rewrites ICD JSONs, and its forbidden-reference
-   check does not include `$DECANTER_HOME`, so nothing catches this. Suggested fix: have the
-   CLI generate the ICD into a writable location (e.g. `$DECANTER_HOME/cache/icd.d/`) at run
-   time with the runtime's real path, and point `VK_DRIVER_FILES` at that — it works for
-   exported apps too, without mutating a signed bundle. Also add `$DECANTER_HOME` to the
-   check. Then rebuild, retest from the image, and re-upload.
+   check does not include `$DECANTER_HOME`, so nothing catches this. **Fixed 2026-10-09:** the
+   CLI now does exactly this — `vulkan_icd()` regenerates the manifest under
+   `~/.local/share/decanter/cache/icd.d/` whenever it points elsewhere, which also covers
+   exported apps without mutating a signed bundle. The next image carries it; the packaging
+   check still only inspects Mach-O load commands, not JSON.
 2. **`bootstrap-runtime.sh` does not build DXMT**, yet `dxmt` is the CLI/GUI default backend.
    The only mention of dxmt in `scripts/` is the licence copy in `package-runtime.sh:131`. A
    fresh bootstrap therefore silently serves Wine's built-in Direct3D for the "DXMT" backend.

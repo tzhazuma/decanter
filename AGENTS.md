@@ -53,6 +53,6 @@ The CLI is the single source of behaviour; the window only shells out to it.
 ## Status (2026-10-09)
 
 v0.1.0 is out (dev runtime, 64-bit only; 32-bit needs a paid entitlement and was deliberately
-not built). Known defects, worst first: `docs/handoff.md` §7 — notably the packaged runtime's
-Vulkan ICD carrying absolute paths, which breaks Direct3D 9/12 and OpenGL away from the build
-machine.
+not built). Known defects and their state: `docs/handoff.md` §7 — the packaged runtime's
+Vulkan ICD carrying absolute paths was fixed in the CLI on 2026-10-09 (the manifest is
+regenerated at run time), and the window gained a Stop button for hung runs the same day.

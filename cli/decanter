@@ -22,6 +22,10 @@ VERSION = "0.1.0"
 
 HOME = Path(os.environ.get("DECANTER_HOME", Path.home() / ".local" / "share" / "decanter"))
 
+# State that has to be writable even for an exported application, whose HOME points inside
+# its own bundle.
+USER_CACHE = Path.home() / ".local" / "share" / "decanter" / "cache"
+
 
 def default_runtime() -> Path:
     """Where the runtime is.
@@ -145,6 +149,36 @@ def vulkan_library() -> str:
     return "unknown"
 
 
+def vulkan_icd() -> Path:
+    """The ICD manifest VK_DRIVER_FILES should point at.
+
+    A runtime that was packaged carries the manifest exactly as it was packed — with an
+    absolute library_path into wherever it was built, which is right on the build machine
+    and wrong everywhere else. When the manifest's library is not where it says, write a
+    corrected copy under the user's own state and point at that instead.
+    """
+    source = RUNTIME / "mesa" / "share" / "vulkan" / "icd.d" / "kosmickrisp_mesa_icd.aarch64.json"
+    library = RUNTIME / "mesa" / "lib" / "libvulkan_kosmickrisp.dylib"
+    if not source.is_file() or not library.is_file():
+        return source
+    try:
+        data = json.loads(source.read_text())
+    except (OSError, ValueError):
+        return source
+    if data.get("ICD", {}).get("library_path") == str(library):
+        return source
+    fixed = USER_CACHE / "icd.d" / "kosmickrisp_mesa_icd.aarch64.json"
+    data.setdefault("ICD", {})["library_path"] = str(library)
+    text = json.dumps(data, indent=4) + "\n"
+    try:
+        if not fixed.is_file() or fixed.read_text() != text:
+            fixed.parent.mkdir(parents=True, exist_ok=True)
+            fixed.write_text(text)
+    except OSError:
+        return source
+    return fixed
+
+
 def runtime_variant() -> str:
     """dev builds move Windows' low addresses above 4 GB; release builds need the entitlement."""
     marker = RUNTIME / "variant"
@@ -230,7 +264,7 @@ def base_env(meta: dict) -> dict:
         "FEX_DISKCACHE": "1",
     }
 
-    icd = RUNTIME / "mesa" / "share" / "vulkan" / "icd.d" / "kosmickrisp_mesa_icd.aarch64.json"
+    icd = vulkan_icd()
     if icd.is_file():
         # KosmicKrisp, Mesa's Vulkan on Metal. MoltenVK, which the loader would find
         # otherwise, cannot create an instance under Wine.
@@ -306,6 +340,9 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     # MoltenVK fallback that configure picks when vulkan-loader is absent at build time, the
     # loader is bypassed entirely and the driver is whatever MoltenVK offers.
     print(f"  vulkan        {vulkan_library()}")
+    icd = vulkan_icd()
+    if icd.is_file():
+        print(f"  icd           {icd}")
 
     if runtime_variant() == "dev":
         print("  note          dev runtime: 64-bit Windows programs only")
@@ -404,6 +441,20 @@ def cmd_bottle_rm(args: argparse.Namespace) -> None:
             return
     shutil.rmtree(directory)
     print(f"deleted bottle {args.name!r}")
+
+
+def cmd_bottle_kill(args: argparse.Namespace) -> None:
+    """Stop everything running in a bottle.
+
+    The wineserver for the bottle's prefix is asked to shut down, which takes the whole
+    session with it — the way out when a program hangs and the run never finishes on its own.
+    """
+    meta = load(args.name)
+    server = RUNTIME / "bin" / "wineserver"
+    if not server.is_file():
+        fail(f"no runtime at {RUNTIME}")
+    subprocess.run([str(server), "-k"], env=base_env(meta), check=False)
+    print(f"stopped {args.name!r}")
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -702,6 +753,10 @@ def main() -> None:
     rm.add_argument("name")
     rm.add_argument("--force", action="store_true")
     rm.set_defaults(func=cmd_bottle_rm)
+
+    kill = bottle_sub.add_parser("kill", help="stop everything running in a bottle")
+    kill.add_argument("name")
+    kill.set_defaults(func=cmd_bottle_kill)
 
     run = sub.add_parser("run", help="run a Windows program in a bottle")
     run.add_argument("bottle")
