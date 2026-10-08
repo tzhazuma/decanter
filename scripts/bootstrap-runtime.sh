@@ -65,6 +65,11 @@ mkdir -p "$RUNTIME"
 # dist-dev is a self-contained tree: bin/, lib/wine/<arch>-windows/, lib/wine/<arch>-unix/
 ditto "$CHECKOUT/dist-dev" "$RUNTIME"
 echo "$VARIANT" > "$RUNTIME/variant"
+
+log "making the runtime independent of the build directory"
+# Meson and Wine record their build-time prefix as each library's install name, so a runtime
+# copied out of a tree still resolves its own libraries through that tree.
+"$DECANTER_ROOT/scripts/make-runtime-portable.sh" "$RUNTIME"
 echo "$HADRON_REF" > "$RUNTIME/hadron-pin"
 
 log "done"

@@ -199,6 +199,17 @@ after these changes.
 2. **The ICD's JSON names an absolute path.** `kosmickrisp_mesa_icd.aarch64.json` points at
    the build directory it was configured with, so installing the driver elsewhere means
    rewriting `library_path`, or nothing loads.
+3. **An installed runtime is not self-contained by default.** Meson and Wine both record
+   their build-time prefix as each library's install name, so a runtime copied out of a tree
+   still resolves its own libraries *through that tree* — `runtime/mesa-zink/lib/libEGL.1.dylib`
+   asked for `~/wine-arm64-lab/hadron/dist/mesa-zink/lib/libgallium-…dylib`. Delete the tree
+   and the runtime breaks; ship it and it names a path that exists on one machine. Confirmed
+   with `DYLD_PRINT_LIBRARIES=1`, fixed with `scripts/make-runtime-portable.sh` (rewrites those
+   to `@rpath`/`@loader_path`, now part of the bootstrap), and re-checked the same way: nothing
+   from the build directory is loaded any more.
+
+   A note on checking it: the first line of `otool -L` output is the file's **own path**, not a
+   dependency. Counting that line reported 40 healthy files as broken.
 
 ## The lessons that cost time
 
