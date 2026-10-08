@@ -1,0 +1,32 @@
+diff --git a/libs/vkd3d/device.c b/libs/vkd3d/device.c
+index 55e4bfa3..b8f878e5 100644
+--- a/libs/vkd3d/device.c
++++ b/libs/vkd3d/device.c
+@@ -3012,6 +3012,14 @@ static bool vkd3d_supports_minimum_coopmat_caps(struct d3d12_device *device)
+ 
+     fp8 = device->device_info.shader_float8_features.shaderFloat8CooperativeMatrix == VK_TRUE;
+ 
++    /* A driver can advertise the extension while the loader refuses to resolve the query
++     * for it; treat that as "no cooperative matrix" rather than crashing. */
++    if (!vk_procs->vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR)
++    {
++        WARN("Cooperative matrix is advertised but its query is unavailable.\n");
++        return false;
++    }
++
+     /* There are no sub-capabilities (yet at least).
+      * Validate that we support everything that dxil-spirv can emit. */
+     if (VK_CALL(vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR(
+diff --git a/libs/vkd3d/vulkan_procs.h b/libs/vkd3d/vulkan_procs.h
+index 3dbb37de..851b75e4 100644
+--- a/libs/vkd3d/vulkan_procs.h
++++ b/libs/vkd3d/vulkan_procs.h
+@@ -385,7 +385,7 @@ VK_DEVICE_EXT_PFN(vkGetLatencyTimingsNV)
+ VK_DEVICE_EXT_PFN(vkQueueNotifyOutOfBandNV)
+ 
+ /* VK_KHR_cooperative_matrix */
+-VK_INSTANCE_PFN(vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR)
++VK_INSTANCE_EXT_PFN(vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR)
+ 
+ /* VK_EXT_opacity_micromap */
+ VK_DEVICE_EXT_PFN(vkGetMicromapBuildSizesEXT)

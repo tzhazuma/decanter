@@ -121,7 +121,7 @@ it under "Using 32-bit Software", with the 64-bit column "Not supported".
 
 **Conclusion: the productivity targets need a paid Apple Developer Program membership.**
 
-## Vulkan and Direct3D 12: built, and one extension short
+## Vulkan and Direct3D 12: built, and two requirements short
 
 The whole open-source Vulkan path builds and installs:
 
@@ -129,29 +129,42 @@ The whole open-source Vulkan path builds and installs:
 |---|---|---|
 | KosmicKrisp, Mesa's Vulkan on Metal | `runtime/mesa/lib/libvulkan_kosmickrisp.dylib` | works: `vulkaninfo` reports `deviceName = Apple M3 Pro` |
 | Zink, Mesa's OpenGL on Vulkan | `runtime/mesa-zink/lib/libEGL.1.dylib` | built, wired through `WINE_MAC_OPENGL=egl` |
-| vkd3d-proton, D3D12 on Vulkan | `runtime/vkd3d-proton/x64/{d3d12,d3d12core}.dll` | loads, enumerates the adapter, **cannot create a device** |
+| vkd3d-proton, D3D12 on Vulkan | `runtime/vkd3d-proton/x64/{d3d12,d3d12core}.dll` | loads, enumerates the adapter, **no device yet** |
 | DXVK's DXGI | `runtime/dxvk/x64/dxgi.dll`, staged as `dxgi_dxvk.dll` | installed |
 
-Through the bottle manager, a D3D12 program gets this far:
+`patches/vkd3d-proton/` carries one fix, applied after Hadron's queue. vkd3d-proton 3.0.1
+declares `vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR` as a **required** instance
+function, and gives up on an instance whose loader cannot resolve it — which is the case on
+KosmicKrisp, whose cooperative matrix support is absent. The patch makes the pointer optional
+and returns "no cooperative matrix" if it is missing, which is safe because the only call site
+is already guarded by the feature bit. That removed the first wall:
 
 ```
-CreateDXGIFactory2: 0x00000000
-adapter 0: Apple M3 Pro
-err:vkd3d-proton:vkd3d_load_vk_instance_procs: Could not get instance proc addr
-    for 'vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR'.
-err:vkd3d-proton:vkd3d_instance_init: Failed to load instance procs, hr 0x80004005.
-D3D12CreateDevice: 0x80004005
+before:  Could not get instance proc addr for
+         'vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR'.
+         D3D12CreateDevice: 0x80004005
+
+after:   fixme:d3d12_find_physical_device: Could not find Vulkan physical device
+             for DXGI adapter.
+         err:vkd3d_init_device_caps: Lacking support for transform feedback.
+         D3D12CreateDevice: 0x80070057
 ```
 
-The cause is narrow and named: **KosmicKrisp does not advertise
-`VK_KHR_cooperative_matrix`**, and vkd3d-proton 3.0.1 declares
-`vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR` as a required instance function
-(`libs/vkd3d/vulkan_procs.h`), so it gives up before it ever looks at a device. The driver
-does carry the extension's name (it appears in the library's strings) but does not expose the
-capability on this GPU. Direct3D 12 therefore needs either a KosmicKrisp that advertises
-cooperative matrix, or a vkd3d-proton that treats the function as optional.
+Two requirements are still unmet, and they are separate problems:
 
-Direct3D 11 on DXMT is unaffected and works, which is what the productivity targets need.
+- **vkd3d-proton cannot match a Vulkan device to the DXGI adapter.** The adapter DXGI
+  enumerates is DXMT's, built on Metal, and it carries no Vulkan identity for vkd3d-proton to
+  match against.
+- **Transform feedback is off.** KosmicKrisp advertises `VK_EXT_transform_feedback` only when
+  `MESA_KK_EXPERIMENTAL` contains `xfb`, and the driver does advertise it when the variable is
+  set — confirmed with `vulkaninfo`. The variable is in the environment the bottle manager
+  passes, so the remaining question is whether the Vulkan loader inside Wine reaches
+  KosmicKrisp at all, rather than some other ICD. Testing that needs a way to see the loader's
+  own choice from inside a Wine process, which is the next thing to build.
+
+Direct3D 11 on DXMT is unaffected, is what the productivity targets need, and was re-checked
+after these changes.
+
 
 ### Two traps in wiring this up
 
