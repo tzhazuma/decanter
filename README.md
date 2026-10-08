@@ -24,6 +24,8 @@ identity and no Apple Developer account**:
 - **Direct3D 9, 11 and 12 all work**, each through the layer chosen for it: DXVK on
   KosmicKrisp for 9 (`Present: ok` on a real swapchain), DXMT straight to Metal for 11
   (feature level 11_1), vkd3d-proton on KosmicKrisp for 12 (feature level 12_0).
+- **OpenGL 4.6**, through Zink on KosmicKrisp — higher than the Mac's own OpenGL, which stops
+  at 4.1.
 - The bottle manager creates, lists and runs programs (`cli/decanter run smoke app.exe`).
 
 - 32-bit Windows programs fail with `c000000d`. The emulator is built and installed; the

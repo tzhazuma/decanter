@@ -266,8 +266,32 @@ def cmd_bottle_list(args: argparse.Namespace) -> None:
         print(f"{name:<20} {meta.get('windows', '?'):<6} {meta.get('graphics', '?'):<8} {programs} program(s)")
 
 
+# Variables the runtime computes for every bottle. Setting one of these in a bottle shadows
+# what the runtime worked out, which is occasionally what you want and more often a leftover
+# from a debugging session -- and the result is a program that quietly gets a different
+# library than the runtime intended. Two afternoons went that way.
+COMPUTED_ENV = (
+    "DYLD_FALLBACK_LIBRARY_PATH",
+    "VK_DRIVER_FILES",
+    "VK_ICD_FILENAMES",
+    "WINE_MAC_OPENGL",
+    "MESA_LOADER_DRIVER_OVERRIDE",
+    "MESA_KK_EXPERIMENTAL",
+    "DRIRC_CONFIGDIR",
+    "WINEDLLOVERRIDES",
+)
+
+
 def cmd_bottle_info(args: argparse.Namespace) -> None:
-    print(json.dumps(load(args.name), indent=2))
+    meta = load(args.name)
+    print(json.dumps(meta, indent=2))
+    shadows = sorted(set(meta.get("env", {})) & set(COMPUTED_ENV))
+    if shadows:
+        print()
+        print("note: these override what the runtime computed for this bottle:")
+        for key in shadows:
+            print(f"  {key}={meta['env'][key]}")
+        print("  (remove one with: decanter env <bottle> NAME=)")
 
 
 def cmd_bottle_rm(args: argparse.Namespace) -> None:

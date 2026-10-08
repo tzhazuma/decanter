@@ -157,6 +157,29 @@ Two requirements are still unmet, and the evidence narrows the first one a long 
   and carries no Vulkan identity, so neither test succeeds; the code then logs a FIXME and
   **falls back to the first physical device** (`libs/d3d12core/main.c`). So this explains the
   FIXME line and nothing else. The error that stops D3D12 is the next one.
+## OpenGL 4.6, higher than the Mac's own
+
+```
+GL_VENDOR:   Mesa
+GL_RENDERER: zink Vulkan 1.4(Apple M3 Pro (MESA_KOSMICKRISP))
+GL_VERSION:  4.6 (Compatibility Profile) Mesa 26.3.0-devel
+glClear: ok   SwapBuffers: ok
+```
+
+Wine's Mac driver hands Mesa's EGL a `CAMetalLayer` and Zink drives KosmicKrisp on top of
+it, so a Windows program gets OpenGL 4.6 where Apple's own OpenGL stops at 4.1. Wine asks for
+this with `WINE_MAC_OPENGL=egl`; without it, it looks for the system OpenGL and fails.
+
+The first attempt failed with `EGL_BAD_NATIVE_WINDOW` (0x300b), and the cause was a leftover:
+a debugging session had written `DYLD_FALLBACK_LIBRARY_PATH=runtime/mesa/lib:...` into that
+bottle's environment — the wrong directory, `mesa-zink` is the one that carries EGL — and it
+shadowed the value the runtime computes. Wine then found Homebrew's Mesa 26.2.4 EGL instead,
+which does not take a `CAMetalLayer` from Wine.
+
+That is the second time a stale bottle variable of mine produced a convincing-looking technical
+failure, so `cli/decanter bottle info` now lists any bottle variable that shadows one the
+runtime computes.
+
 ## Direct3D 9 works too, through DXVK
 
 ```
