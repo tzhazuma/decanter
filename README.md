@@ -100,7 +100,7 @@ From the command line:
 
 ```
 app/         Decanter.app: the window (SwiftUI), built by scripts/build-app.sh
-scripts/     runtime bootstrap, app build
+scripts/     runtime bootstrap, app build, Apple toolkit import
 cli/         the bottle manager both front ends agree on
 recipes/     known configurations (Visual C++ runtime, .NET)
 docs/        the research behind the design, and what was measured
