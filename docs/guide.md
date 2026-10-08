@@ -143,8 +143,9 @@ cannot run 32-bit programs.
 
 Two ways forward, and both are decisions rather than work:
 
-- **A paid Apple Developer Program membership** ($99/year). Then `--release` is possible, and
-  the resulting runtime can be given to other people.
+- **A paid Apple Developer Program membership** ($99/year). Then `scripts/bootstrap-runtime.sh
+  --release` builds one and `scripts/sign-loader.sh` signs it; the published image is the
+  development runtime, and [release-signing.md](release-signing.md) is the whole procedure.
 - **Weakening the machine's security**, which is not a release plan: it means a Recovery boot,
   Permissive Security, and re-applying an allowlist after every rebuild.
 

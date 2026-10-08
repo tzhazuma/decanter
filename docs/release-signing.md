@@ -23,6 +23,24 @@ There are two ways round it and one of them is not a way out:
 | **`bootstrap-runtime.sh --dev`** | moves Windows' low addresses above 4 GB, so nothing is needed — and 32-bit programs cannot follow it there |
 | Weakening SIP | works, is per-machine, and cannot be shipped to anyone. `docs/entitlement.md` |
 
+## What is in the release, and what is not
+
+The published disk image is a **development** runtime: 64-bit programs, no account needed. A
+**release** runtime — the one that can run 32-bit programs once signed — is not published,
+because building it takes about forty minutes and it cannot run anything until somebody signs
+it. The scripts to build one are in the repository and are all that is needed:
+
+```sh
+scripts/bootstrap-runtime.sh --release      # builds it, and says what the loader still needs
+scripts/sign-loader.sh <profile> --runtime  # signs the loader; anyone with a profile can
+```
+
+The bootstrap builds the release variant of Wine, FEX and the graphics stack, installs them as
+a runtime in `~/.local/share/decanter/runtime`, and finishes by reading the loader's signature
+and telling you whether it carries the entitlement — `codesign -d --entitlements` under the
+hood. It runs 64-bit programs meanwhile, so a runtime built this way is not wasted while you
+wait for an account.
+
 ## What you need
 
 - An Apple Developer Program membership ($99/year). A free Apple ID cannot be used: the
