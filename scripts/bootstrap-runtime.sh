@@ -87,8 +87,13 @@ fetch_and_patch() {
     # fails much later with a missing CMakeLists.txt. Hadron's script does this too; a network
     # that drops once in a while makes doing it twice worthwhile.
     if [[ -d "$CHECKOUT/src/$name/.git" ]]; then
+        # --force, not just --init: a submodule whose path was moved in .gitmodules keeps a stale
+        # gitdir, git decides it is already at the right commit and checks nothing out, and the
+        # build then fails much later with a directory that exists and is empty. FEX's
+        # cpp-optparse is exactly that case.
         for attempt in 1 2 3; do
-            git -C "$CHECKOUT/src/$name" submodule update --init --recursive --filter=blob:none -q 2>/dev/null && break
+            git -C "$CHECKOUT/src/$name" submodule update --init --recursive --filter=blob:none \
+                --force --checkout -q 2>/dev/null && break
             sleep 5
         done
     fi
@@ -130,7 +135,14 @@ log "building Wine natively for arm64 macOS ($VARIANT, $JOBS jobs)"
 PATH="$BREW/bin:$PATH" "$CHECKOUT/scripts/build-wine.sh" $WINE_VARIANT_FLAG
 
 log "building FEX's emulator DLLs"
-"$CHECKOUT/scripts/build-fex.sh" ${WINE_VARIANT_FLAG:---dev}
+# The same FEX build serves both variants; only where it is installed differs, and it has to land
+# in the same tree Wine did or the runtime comes out without an emulator. "${VAR:-default}" would
+# read as "use --dev when the flag is empty", which is exactly backwards for a release build.
+if [[ $VARIANT == dev ]]; then
+    "$CHECKOUT/scripts/build-fex.sh" --dev
+else
+    "$CHECKOUT/scripts/build-fex.sh"
+fi
 
 log "building KosmicKrisp (Vulkan on Metal)"
 rm -rf "$CHECKOUT/build/mesa"
