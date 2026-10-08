@@ -15,6 +15,10 @@ struct DecanterApp: App {
                 Button("New Bottle…") { store.presentNewBottle = true }
                     .keyboardShortcut("n")
             }
+            CommandGroup(replacing: .help) {
+                Link("Decanter Guide", destination: URL(string: "https://github.com/tzhazuma/decanter/blob/main/docs/guide.md")!)
+                Link("Report a Problem", destination: URL(string: "https://github.com/tzhazuma/decanter/issues")!)
+            }
         }
     }
 }
@@ -160,8 +164,19 @@ struct BottleView: View {
             Form {
                 Section("Bottle") {
                     LabeledContent("Name", value: bottle.name)
-                    LabeledContent("Windows version", value: bottle.windows ?? "win10")
-                    LabeledContent("Graphics", value: bottle.graphics ?? "wined3d")
+                    Picker("Windows version", selection: Binding(
+                        get: { bottle.windows ?? "win10" },
+                        set: { store.update(bottle.name, windows: $0) })) {
+                        Text("Windows 7").tag("win7")
+                        Text("Windows 10").tag("win10")
+                        Text("Windows 11").tag("win11")
+                    }
+                    Picker("Graphics", selection: Binding(
+                        get: { bottle.graphics ?? "wined3d" },
+                        set: { store.update(bottle.name, graphics: $0) })) {
+                        Text("WineD3D (built in)").tag("wined3d")
+                        Text("DXMT (Direct3D 10/11 on Metal)").tag("dxmt")
+                    }
                     if let created = bottle.created {
                         LabeledContent("Created", value: created)
                     }

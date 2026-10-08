@@ -33,7 +33,20 @@ HADRON_REF="${HADRON_REF:-3e7043aa4264aab9d598ff6d52d49ac53d0fca00}"
 CHECKOUT="$DECANTER_WORK/hadron"
 RUNTIME="$DECANTER_HOME/runtime"
 
-[[ $VARIANT == dev ]] || die "--release needs a provisioning profile; see docs/entitlement.md"
+# The two variants differ in one Wine build flag. --dev moves Windows' low addresses above 4 GB
+# so that no restricted entitlement is needed, at the cost of 32-bit programs. --release leaves
+# them where Windows expects, and then the loader must be signed with
+# com.apple.developer.cross-architecture-support or the kernel kills it at startup.
+#
+# --release builds and packages without any signing identity. It runs 64-bit programs as it is;
+# 32-bit programs need the loader signed, which scripts/sign-loader.sh does with a provisioning
+# profile, and which can be done by anyone holding one. See docs/release-signing.md.
+WINE_VARIANT_FLAG="--dev"
+INSTALL_TREE="dist-dev"
+if [[ $VARIANT == release ]]; then
+    WINE_VARIANT_FLAG=""
+    INSTALL_TREE="dist"
+fi
 
 log "installing build dependencies (arm64 Homebrew)"
 # vulkan-loader must be here *before* Wine is configured. Wine's configure prefers the Khronos
@@ -63,12 +76,19 @@ log "toolchain"
 # be read without diffing two trees.
 fetch_and_patch() {
     local name="$1"
+    # Hadron's fetch.sh checks the component out at its pinned revision, and git refuses to do
+    # that over a modified tree -- which is exactly the state a previous run leaves behind, since
+    # our patches are applied to the working tree rather than committed. So start clean.
+    if [[ -d "$CHECKOUT/src/$name/.git" ]]; then
+        git -C "$CHECKOUT/src/$name" reset --hard -q 2>/dev/null || true
+    fi
     "$CHECKOUT/scripts/fetch.sh" "$name"
     local patches=("$DECANTER_ROOT/patches/$name"/*.patch)
     if [[ -e ${patches[0]} ]]; then
         log "applying ${#patches[@]} Decanter patch(es) to $name"
-        git -C "$CHECKOUT/src/$name" -c user.name=decanter -c user.email=dev@decanter.invalid \
-            am -q --3way "${patches[@]}"
+        # git apply, not git am: these are plain diffs from git diff rather than mailbox files,
+        # and am refuses them with "Patch format detection failed".
+        git -C "$CHECKOUT/src/$name" apply --3way "${patches[@]}"
     fi
 }
 
@@ -98,10 +118,10 @@ if [[ ! -x "$mesa_venv/bin/python" ]]; then
 fi
 
 log "building Wine natively for arm64 macOS ($VARIANT, $JOBS jobs)"
-PATH="$BREW/bin:$PATH" "$CHECKOUT/scripts/build-wine.sh" --dev
+PATH="$BREW/bin:$PATH" "$CHECKOUT/scripts/build-wine.sh" $WINE_VARIANT_FLAG
 
 log "building FEX's emulator DLLs"
-"$CHECKOUT/scripts/build-fex.sh" --dev
+"$CHECKOUT/scripts/build-fex.sh" ${WINE_VARIANT_FLAG:---dev}
 
 log "building KosmicKrisp (Vulkan on Metal)"
 rm -rf "$CHECKOUT/build/mesa"
@@ -142,7 +162,7 @@ PATH="$CHECKOUT/toolchains/llvm-mingw/bin:$PATH" ninja -C "$CHECKOUT/build/dxvk-
 log "installing runtime into $RUNTIME"
 rm -rf "$RUNTIME"
 mkdir -p "$RUNTIME"
-ditto "$CHECKOUT/dist-dev" "$RUNTIME"
+ditto "$CHECKOUT/$INSTALL_TREE" "$RUNTIME"
 echo "$VARIANT" > "$RUNTIME/variant"
 echo "$HADRON_REF" > "$RUNTIME/hadron-pin"
 
@@ -169,6 +189,20 @@ PY
 
 log "making the runtime independent of the build directory"
 "$DECANTER_ROOT/scripts/make-runtime-portable.sh" "$RUNTIME"
+
+if [[ $VARIANT == release ]]; then
+    log "checking the loader's entitlement"
+    loader="$RUNTIME/lib/wine/aarch64-unix/wine"
+    carried=$(codesign -d --entitlements - "$loader" 2>/dev/null | grep -c "cross-architecture-support" || true)
+    if (( carried )); then
+        log "the loader carries the cross-architecture entitlement"
+    else
+        warn "the loader does NOT carry com.apple.developer.cross-architecture-support."
+        warn "This runtime runs 64-bit programs. 32-bit programs need the loader signed with it:"
+        warn "    scripts/sign-loader.sh <profile.provisionprofile> <identity>"
+        warn "docs/release-signing.md explains where a profile comes from."
+    fi
+fi
 
 log "done"
 if grep -qa "libMoltenVK.dylib" "$RUNTIME/lib/wine/aarch64-unix/win32u.so" 2>/dev/null; then

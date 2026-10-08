@@ -228,6 +228,14 @@ final class Store: ObservableObject {
         runTool(["shortcut", "rm", bottle, name])
     }
 
+    /// Change a bottle's Windows version or graphics backend after it was made.
+    func update(_ bottle: String, windows: String? = nil, graphics: String? = nil) {
+        var arguments = ["bottle", "set", bottle]
+        if let windows { arguments += ["--windows", windows] }
+        if let graphics { arguments += ["--graphics", graphics] }
+        runTool(arguments)
+    }
+
     func setEnvironment(_ assignments: [String], in bottle: String) {
         runTool(["env", bottle] + assignments)
     }

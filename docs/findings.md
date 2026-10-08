@@ -325,3 +325,23 @@ after these changes.
   programs; a windowed application will need DXMT at least.
 - The bottle manager has not been exercised against the runtime end to end.
 - Nothing has been run on the release variant, because it needs the entitlement.
+
+## Visual Studio Code: launches, loads, and does not paint
+
+As an experiment on a large, real 64-bit Windows application, the portable Windows x64 build of
+VS Code, extracted into a bottle and started through `decanter run`.
+
+| Flags | Result |
+|---|---|
+| none | window appears, then `GPU process isn't usable. Goodbye.` and an unhandled exception |
+| `--disable-gpu --no-sandbox` | six processes alive, window titled "Visual Studio Code", then `CodeWindow: renderer process gone (reason: crashed, code: -1073741819)` — `0xC0000005`, an access violation, and an error dialog |
+| `--disable-gpu --no-sandbox --js-flags=--jitless` | **eleven processes alive**, no renderer crash, and the window title becomes `Welcome - Visual Studio Code [Administrator]` — the page loaded and its DOM is running |
+
+So the Electron runtime starts, the renderer survives once V8 stops generating code, and the
+application reaches its welcome page. What it does not do is **paint**: the window stays blank,
+and comes up around 131x144 points rather than the size VS Code asks for. A hand-written Win32
+window in the same bottle renders correctly at 512x338, so this is specific to how Chromium
+composites into its window rather than anything about Wine's windows in general.
+
+Not usable yet, and worth writing down as measured rather than assumed: the failure was a
+renderer crash that only `--jitless` avoided, and the remaining problem is presentation.
