@@ -27,8 +27,15 @@ while IFS= read -r file; do
     while IFS= read -r dep; do
         case "$dep" in
             /Users/*|/opt/*|/private/*)
-                # The library is in this runtime: call it by its own file name through rpath.
-                rewrite "$file" "$dep" "@rpath/$(basename "$dep")"
+                # Only rewrite a dependency this runtime actually carries. Rewriting one it
+                # does not carry -- SPIRV-Tools, say, which comes from Homebrew -- turns a
+                # working absolute path into an @rpath that resolves to nothing, and the
+                # library stops loading. That happened, and Wine silently fell back to a
+                # different Vulkan driver.
+                if [[ -e "$RUNTIME/$(basename "$dep")" ]] \
+                   || find "$RUNTIME" -name "$(basename "$dep")" -print -quit 2>/dev/null | grep -q .; then
+                    rewrite "$file" "$dep" "@rpath/$(basename "$dep")"
+                fi
                 ;;
         esac
     done < <(otool -L "$file" 2>/dev/null | tail -n +2 | awk '{print $1}')

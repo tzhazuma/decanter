@@ -1,0 +1,25 @@
+diff --git a/src/kosmickrisp/vulkan/kk_debug.c b/src/kosmickrisp/vulkan/kk_debug.c
+index 1fb09975041..ecff4876874 100644
+--- a/src/kosmickrisp/vulkan/kk_debug.c
++++ b/src/kosmickrisp/vulkan/kk_debug.c
+@@ -3,6 +3,8 @@
+  * SPDX-License-Identifier: MIT
+  */
+ #include "kk_debug.h"
++#include <inttypes.h>
++#include <stdio.h>
+ #include "util/u_debug.h"
+ 
+ enum kk_debug kk_mesa_debug_flags = 0;
+@@ -36,4 +38,11 @@ kk_process_debug_variable(void)
+ {
+    kk_mesa_debug_flags = debug_get_option_mesa_kk_debug();
+    kk_mesa_experimental_flags = debug_get_option_mesa_kk_experimental();
++
++   /* Say what was read, on demand. Whether these flags take effect in a given process is
++    * otherwise invisible from outside, and it is the first thing worth knowing when a
++    * capability shows up in one process and not in another. */
++   if (getenv("MESA_KK_TRACE"))
++      fprintf(stderr, "kosmickrisp: debug_flags=%#" PRIx64 " experimental_flags=%#" PRIx64 "\n",
++              (uint64_t)kk_mesa_debug_flags, (uint64_t)kk_mesa_experimental_flags);
+ }
