@@ -158,27 +158,32 @@ Two requirements are still unmet, and the evidence narrows the first one a long 
   **falls back to the first physical device** (`libs/d3d12core/main.c`). So this explains the
   FIXME line and nothing else. The error that stops D3D12 is the next one.
 - **KosmicKrisp reports no transform feedback inside the Wine process, but does outside it.**
-  Measured, not inferred:
+  Measured five ways now, and three suspects have been eliminated:
 
   | Check | Result |
   |---|---|
-  | Which ICD the loader opens inside Wine (`VK_LOADER_DEBUG=all`) | exactly `runtime/mesa/lib/libvulkan_kosmickrisp.dylib`, nothing else |
-  | `vulkaninfo` run natively with **the exact environment the bottle manager passes** | `driverName = KosmicKrisp`, `VK_EXT_transform_feedback` present |
-  | The same environment visible inside Wine (`cmd /c set`) | `MESA_KK_EXPERIMENTAL=dgc,xfb,sparse` is there |
-  | `VK_LOADER_DEBUG` inside Wine | the loader's own output appears, so native libraries in that process do read the environment |
-  | A Windows program asking its own driver (`tools/vkprobe.c`) | device `Apple M3 Pro`, **126** device extensions, no transform feedback |
-  | Natively, same driver and same environment | **152** device extensions, transform feedback present |
-  | vkd3d-proton's view, with `MESA_KK_EXPERIMENTAL=all` | still `Lacking support for transform feedback` |
+  | Which ICD the loader opens inside Wine (`VK_LOADER_DEBUG`) | exactly the runtime's KosmicKrisp |
+  | `vulkaninfo` natively, **the exact environment the bottle manager passes** | 152 extensions, transform feedback present |
+  | A Windows program asking its own driver (`tools/vkprobe.c`) | device `Apple M3 Pro`, 126 extensions, no transform feedback |
+  | Wine's own log of what the host reports (`WINEDEBUG=+vulkan`) | **127** host extensions, no transform feedback |
+  | Same, with `MESA_KK_EXPERIMENTAL=all` | unchanged |
 
-  **The two lists are not the same list, and the difference is not the environment variable.**
-  Extensions that Vulkan promoted to core in 1.2 and 1.3 — `VK_EXT_descriptor_indexing`,
-  `VK_EXT_extended_dynamic_state` — appear in the Wine list *as extensions*, which is what a
-  driver reporting a lower device version looks like, and there are extensions in each list
-  the other does not have. The probe was run at API version 1.1 and 1.3 with the same result,
-  so it is not the requested version either.
+  **Eliminated:** the ICD is not mis-selected (the loader names ours, and the host's
+  `VK_EXT_external_memory_metal` is KosmicKrisp's own extension); MoltenVK is not involved
+  (disabling it with `VK_LOADER_DRIVERS_DISABLE` changes nothing); and Wine is not filtering the
+  list away (it passes 127 host extensions through to 126 client ones, and the mechanism,
+  `is_device_extension_supported`, only drops extensions Wine has no thunks for).
 
-  So what a Windows program sees is not what the driver publishes. That is the question to
-  chase next, and `tools/vkprobe.c` is the instrument for it.
+  That leaves one statement, measured three separate ways: **the driver reports its
+  flag-gated extensions outside Wine and not inside it.** What the flags add is exactly what is
+  missing — `VK_EXT_device_generated_commands`, `VK_EXT_transform_feedback` and the rest of
+  the `MESA_KK_EXPERIMENTAL` set. The loader in that same process demonstrably reads the
+  environment, so this is not simply "the variable never arrives"; the next thing to find out
+  is what is different about how the ICD is reached from inside Wine.
+
+  `WINEDEBUG=+vulkan` (the channel is named `vulkan`, not `winevulkan`) prints Wine's own view
+  of the host: `init_physical_device Host physical device extensions:` followed by the list.
+  That is the best instrument here, better than the probe.
 
 Direct3D 11 on DXMT is unaffected, is what the productivity targets need, and was re-checked
 after these changes.

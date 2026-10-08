@@ -276,10 +276,13 @@ def cmd_env(args: argparse.Namespace) -> None:
             print(f"{key}={value}")
         return
     for assignment in args.assignments:
-        if "=" not in assignment:
-            meta.get("env", {}).pop(assignment, None)
+        key, _, value = assignment.partition("=")
+        if not value:
+            # An empty value removes the variable. Setting it to the empty string would
+            # override whatever the runtime computed, which is how "unset VK_DRIVER_FILES"
+            # once turned into "tell the Vulkan loader to load no driver at all".
+            meta.get("env", {}).pop(key, None)
             continue
-        key, value = assignment.split("=", 1)
         meta.setdefault("env", {})[key] = value
     save(meta)
     print(f"updated {args.bottle!r}")
