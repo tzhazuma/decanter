@@ -172,11 +172,30 @@ struct BottleView: View {
                         Text("Windows 11").tag("win11")
                     }
                     Picker("Graphics", selection: Binding(
-                        get: { bottle.graphics ?? "wined3d" },
+                        get: { Backend.named(bottle.graphics).rawValue },
                         set: { store.update(bottle.name, graphics: $0) })) {
-                        Text("WineD3D (built in)").tag("wined3d")
-                        Text("DXMT (Direct3D 10/11 on Metal)").tag("dxmt")
+                        ForEach(Backend.allCases) { backend in
+                            Text(backend.title).tag(backend.rawValue)
+                        }
                     }
+                    // What the choice actually decides, version by version, rather than leaving
+                    // it to a name.
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Backend.named(bottle.graphics).routing, id: \.0) { version, layer in
+                            HStack(spacing: 6) {
+                                Text("Direct3D \(version)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .frame(width: 78, alignment: .leading)
+                                Text(layer).font(.caption)
+                            }
+                        }
+                        HStack(spacing: 6) {
+                            Text("older").font(.caption).foregroundStyle(.secondary)
+                                .frame(width: 78, alignment: .leading)
+                            Text("Wine itself").font(.caption)
+                        }
+                    }
+                    .padding(.leading, 2)
                     if let created = bottle.created {
                         LabeledContent("Created", value: created)
                     }
@@ -188,13 +207,16 @@ struct BottleView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(shortcut.name)
-                                    Text(shortcut.path)
+                                    Text(shortcut.path + " " + (shortcut.args ?? []).joined(separator: " "))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
                                 }
                                 Spacer()
                                 Button {
-                                    store.runProgram(in: bottle.name, path: shortcut.path)
+                                    store.runProgram(in: bottle.name, path: shortcut.path,
+                                                     arguments: shortcut.args ?? [])
                                 } label: {
                                     Image(systemName: "play.fill")
                                 }
@@ -305,6 +327,7 @@ struct AddProgramSheet: View {
 
     @State private var name = ""
     @State private var path = ""
+    @State private var arguments = ""
     @State private var suggestions: [String] = []
 
     var body: some View {
@@ -315,6 +338,8 @@ struct AddProgramSheet: View {
                 TextField("Name", text: $name)
                 TextField("Windows path", text: $path,
                           prompt: Text("C:\\Program Files\\Vendor\\app.exe"))
+                TextField("Arguments", text: $arguments,
+                          prompt: Text("flags the program needs, e.g. --no-sandbox"))
             }
 
             if !suggestions.isEmpty {
@@ -346,7 +371,8 @@ struct AddProgramSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Add") {
-                    store.addShortcut(to: bottle, name: name, path: path)
+                    let flags = arguments.split(separator: " ").map(String.init)
+                    store.addShortcut(to: bottle, name: name, path: path, arguments: flags)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

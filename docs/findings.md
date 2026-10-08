@@ -326,22 +326,39 @@ after these changes.
 - The bottle manager has not been exercised against the runtime end to end.
 - Nothing has been run on the release variant, because it needs the entitlement.
 
-## Visual Studio Code: launches, loads, and does not paint
+## Visual Studio Code runs
 
-As an experiment on a large, real 64-bit Windows application, the portable Windows x64 build of
+As an experiment with a large, real 64-bit Windows application, the portable Windows x64 build of
 VS Code, extracted into a bottle and started through `decanter run`.
 
 | Flags | Result |
 |---|---|
-| none | window appears, then `GPU process isn't usable. Goodbye.` and an unhandled exception |
-| `--disable-gpu --no-sandbox` | six processes alive, window titled "Visual Studio Code", then `CodeWindow: renderer process gone (reason: crashed, code: -1073741819)` — `0xC0000005`, an access violation, and an error dialog |
-| `--disable-gpu --no-sandbox --js-flags=--jitless` | **eleven processes alive**, no renderer crash, and the window title becomes `Welcome - Visual Studio Code [Administrator]` — the page loaded and its DOM is running |
+| none | `GPU process isn't usable. Goodbye.`, then an unhandled exception |
+| `--no-sandbox` | no crash, but the window shows only its background — the workbench never renders |
+| `--no-sandbox --js-flags=--jitless` | **the whole workbench renders**, 1200x800: menu bar, activity bar, the Welcome tab, Walkthroughs, the status bar |
+| `--disable-gpu` added to the above | no difference, so it is not needed |
 
-So the Electron runtime starts, the renderer survives once V8 stops generating code, and the
-application reaches its welcome page. What it does not do is **paint**: the window stays blank,
-and comes up around 131x144 points rather than the size VS Code asks for. A hand-written Win32
-window in the same bottle renders correctly at 512x338, so this is specific to how Chromium
-composites into its window rather than anything about Wine's windows in general.
+So it works, with `--no-sandbox --js-flags=--jitless`. A shortcut can carry those flags
+(`decanter shortcut add <bottle> Name <path> --args --no-sandbox --js-flags=--jitless`), which
+is what the window does when the arguments field is filled in.
 
-Not usable yet, and worth writing down as measured rather than assumed: the failure was a
-renderer crash that only `--jitless` avoided, and the remaining problem is presentation.
+### How the first answer was wrong
+
+This section first said VS Code "launches, loads and does not paint", with a screenshot showing a
+blank window. **That was a measurement error, not a finding**, and it is worth leaving the
+correction here rather than quietly deleting the mistake.
+
+`CGWindowListCopyWindowInfo` reported the VS Code window as 131x156, and `screencapture -l` —
+which uses the same window-server geometry — then captured exactly that region, which is the
+window's title bar and a strip of empty space. Both were wrong. Asked directly, Windows said the
+window was 1208x804 at 152,91, exactly what `--window-size=1200,800` had requested, and Chromium's
+own DevTools answered `Page.captureScreenshot` with the complete, correctly laid out workbench.
+
+The instrument that settled it is `tools/devtools-shot.py`: it asks the page to photograph
+itself over the DevTools protocol, so neither the window server nor the screen is involved.
+Anything about whether an application *renders* should be asked that way.
+
+Two lessons, and this document has now recorded both more than once. `CGWindowListCopyWindowInfo`
+is not evidence of a window's size — it has been wrong for a native SwiftUI window, for a
+hand-written Win32 window and for this one. And a screenshot is only as good as the geometry it
+was taken with.

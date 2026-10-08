@@ -439,12 +439,18 @@ def cmd_shortcut(args: argparse.Namespace) -> None:
         if not shortcuts:
             print("no shortcuts")
         for entry in shortcuts:
-            print(f"{entry['name']:<24} {entry['path']}")
+            extra = " " + " ".join(entry.get("args", []))
+            print(f"{entry['name']:<24} {entry['path']}{extra}")
         return
 
     if args.shortcut_command == "add":
         shortcuts[:] = [s for s in shortcuts if s["name"] != args.name]
-        shortcuts.append({"name": args.name, "path": args.path})
+        entry = {"name": args.name, "path": args.path}
+        # Some programs need flags to start under Wine at all; a shortcut is where they belong,
+        # so that launching it does not mean remembering them.
+        if args.arguments:
+            entry["args"] = args.arguments
+        shortcuts.append(entry)
         shortcuts.sort(key=lambda s: s["name"].lower())
         save(meta)
         print(f"added {args.name!r} to {args.bottle!r}")
@@ -585,6 +591,8 @@ def main() -> None:
     shortcut_add.add_argument("bottle")
     shortcut_add.add_argument("name")
     shortcut_add.add_argument("path", help="Windows path, e.g. 'C:\\\\Program Files\\\\Vendor\\\\app.exe'")
+    shortcut_add.add_argument("--args", dest="arguments", nargs=argparse.REMAINDER, default=[],
+                              help="arguments to launch it with")
     shortcut_add.set_defaults(func=cmd_shortcut)
     shortcut_rm = shortcut_sub.add_parser("rm", help="remove a shortcut")
     shortcut_rm.add_argument("bottle")

@@ -21,6 +21,9 @@ struct Bottle: Identifiable, Codable, Hashable {
     struct Shortcut: Codable, Hashable, Identifiable {
         var name: String
         var path: String
+        /// Flags the program needs to start under Wine, kept with the shortcut so that launching
+        /// it does not mean remembering them.
+        var args: [String]?
         var id: String { name }
     }
 }
@@ -28,6 +31,39 @@ struct Bottle: Identifiable, Codable, Hashable {
 /// A bottle named by a sheet that is being presented.
 struct BottleRef: Identifiable, Hashable {
     var id: String
+}
+
+/// Where each Direct3D version goes under a backend. The same table the command line prints, so
+/// the window and the shell say the same thing.
+enum Backend: String, CaseIterable, Identifiable {
+    case dxmt
+    case dxvk
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .dxmt: return "DXMT — Direct3D 10 and 11 straight to Metal"
+        case .dxvk: return "DXVK — Direct3D 9, 10 and 11 on KosmicKrisp"
+        }
+    }
+
+    /// Direct3D version to what serves it.
+    var routing: [(String, String)] {
+        switch self {
+        case .dxmt:
+            return [("9", "DXVK on KosmicKrisp"), ("10", "DXMT on Metal"),
+                    ("11", "DXMT on Metal"), ("12", "vkd3d-proton on KosmicKrisp")]
+        case .dxvk:
+            return [("9", "DXVK on KosmicKrisp"), ("10", "DXVK on KosmicKrisp"),
+                    ("11", "DXVK on KosmicKrisp"), ("12", "vkd3d-proton on KosmicKrisp")]
+        }
+    }
+
+    /// Bottles made before the choice meant anything say wined3d, which was never what they got.
+    static func named(_ name: String?) -> Backend {
+        Backend(rawValue: name ?? "") ?? .dxmt
+    }
 }
 
 /// What the runtime reports about itself.
@@ -208,8 +244,8 @@ final class Store: ObservableObject {
         runTool(["bottle", "rm", name, "--force"])
     }
 
-    func runProgram(in bottle: String, path: String) {
-        runTool(["run", bottle, path])
+    func runProgram(in bottle: String, path: String, arguments: [String] = []) {
+        runTool(["run", bottle, path] + arguments)
     }
 
     func installProgram(in bottle: String, path: String) {
@@ -220,8 +256,10 @@ final class Store: ObservableObject {
         runTool(["recipe", "apply", bottle, recipe])
     }
 
-    func addShortcut(to bottle: String, name: String, path: String) {
-        runTool(["shortcut", "add", bottle, name, path])
+    func addShortcut(to bottle: String, name: String, path: String, arguments: [String] = []) {
+        var command = ["shortcut", "add", bottle, name, path]
+        if !arguments.isEmpty { command += ["--args"] + arguments }
+        runTool(command)
     }
 
     func removeShortcut(from bottle: String, name: String) {

@@ -146,9 +146,18 @@ Beyond 32-bit programs:
   and AutoCAD all do; running them through Wine is worse in every way.
 - **The first start of a program is slow** while Wine creates its environment and shaders are
   compiled.
-- **Electron applications are not there yet.** Visual Studio Code for Windows launches and, with
-  `--disable-gpu --no-sandbox --js-flags=--jitless`, its page loads — but the window never
-  paints. `docs/findings.md` has the measurements.
+- **Electron applications need flags.** Visual Studio Code for Windows works, and needs
+  `--no-sandbox --js-flags=--jitless` to get there: without them its renderer crashes, and with
+  only `--no-sandbox` the workbench does not render. Keep them with the program rather than in
+  your head:
+
+  ```sh
+  ./cli/decanter shortcut add work 'VS Code' 'C:\Program Files\VSCode\Code.exe' \
+      --args --no-sandbox --js-flags=--jitless
+  ```
+
+  `docs/findings.md` has the measurements, and a note on how the first, wrong answer about this
+  came from measuring the window rather than asking it.
 
 ## Troubleshooting
 
