@@ -47,10 +47,18 @@ The geometry is right in Windows' own terms: a window created at 520x340 reports
 rect of 520x340, a client rect of 512x306, and 96 dpi — measured from inside the application
 by writing `GetWindowRect` to a file.
 
-**Do not read `kCGWindowBounds` too early.** Sampling the window server a few seconds after
-launch reports a fraction of the real size (97x111 for a 520x340 window), which looks like a
-scaling bug and is not one; the window is still settling. Give it the time the application
-itself needs.
+**Do not read `kCGWindowBounds` at all; use the accessibility API.** That call lists a window
+and its title correctly, but its geometry is wrong here: a 940x640 window was reported as
+105x124, and a 520x340 one as 97x111, and neither ever settles to the real value. The
+accessibility API tells the truth:
+
+```
+$ osascript -e 'tell application "System Events" to tell process "Decanter" to get size of window 1'
+940, 640
+```
+
+This first looked like a window that had not finished opening, which was wrong. Use
+CoreGraphics to answer *does a window exist*, and System Events to answer *how big is it*.
 
 ## The graphics stack works: Direct3D 11 reaches Metal
 

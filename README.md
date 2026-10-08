@@ -79,9 +79,15 @@ Requires an Apple Silicon Mac with macOS 27, Xcode, and Homebrew.
 git clone https://github.com/tzhazuma/decanter
 cd decanter
 scripts/bootstrap-runtime.sh --dev     # fetch and build the arm64 Wine + FEX runtime
+scripts/build-app.sh                   # build Decanter.app
+open build/Decanter.app
 ```
 
-Then:
+The window and the command line are two front ends to the same bottles: the window runs
+`cli/decanter`, and reads the same `bottle.json` files, so whatever you create in one shows
+up in the other.
+
+From the command line:
 
 ```sh
 ./cli/decanter doctor                  # check the runtime
@@ -93,8 +99,10 @@ Then:
 ## Layout
 
 ```
-scripts/     runtime bootstrap and build
-cli/         the bottle manager
+app/         Decanter.app: the window (SwiftUI), built by scripts/build-app.sh
+scripts/     runtime bootstrap, app build
+cli/         the bottle manager both front ends agree on
+recipes/     known configurations (Visual C++ runtime, .NET)
 docs/        the research behind the design, and what was measured
 patches/     our own patches, if any
 ```
