@@ -32,6 +32,61 @@ translated flag (`ps -eo pid,translated` shows none). Nothing about this path is
 
 A native PE (`cmd.exe /c echo`) also works, which is the no-emulation case.
 
+## Windows applications show real windows
+
+Checked against the window server rather than by eye, so the result is evidence and not an
+impression (`CGWindowListCopyWindowInfo`, looking for windows whose owner is `wine`):
+
+| Test | Program | Result |
+|---|---|---|
+| E | `gui-x64.exe`, Win32 GUI, x86-64, emulated | `owner=wine title="decanter x86-64 GUI test" layer=0` |
+| F | `gui-ec.exe`, same, ARM64EC | `owner=wine title="decanter x86-64 GUI test" layer=0` |
+| — | Wine's own `notepad` (native arm64 PE) | `owner=wine title="Untitled - Notepad"` |
+
+The geometry is right in Windows' own terms: a window created at 520x340 reports a window
+rect of 520x340, a client rect of 512x306, and 96 dpi — measured from inside the application
+by writing `GetWindowRect` to a file.
+
+**Do not read `kCGWindowBounds` too early.** Sampling the window server a few seconds after
+launch reports a fraction of the real size (97x111 for a 520x340 window), which looks like a
+scaling bug and is not one; the window is still settling. Give it the time the application
+itself needs.
+
+## The graphics stack works: Direct3D 11 reaches Metal
+
+With DXMT installed, from a program running as **emulated x86-64 code**:
+
+```
+info:  Maximum supported feature level: D3D_FEATURE_LEVEL_11_1
+info:  Using feature level D3D_FEATURE_LEVEL_11_1
+adapter 0: Apple M3 Pro
+D3D11 device created, feature level 0xb100
+CreateBuffer (vertex): ok
+CreateTexture2D 512x512: ok
+CreateVertexShader: ok
+```
+
+The adapter is the Mac's own GPU. The path is x86-64 Windows code → FEX → DXMT's ARM64X
+`d3d11.dll` → `winemetal` → Metal.
+
+Three things had to be got right, and each failed in a way that did not name its cause:
+
+1. **Xcode does not ship the Metal compiler.** `xcrun -f metal` fails until
+   `xcodebuild -downloadComponent MetalToolchain` (839 MB, no admin rights needed) has run.
+   DXMT's shaders cannot be compiled without it.
+2. **Homebrew's `llvm@15` is usable, and DXMT knows it** — `src/airconv/darwin/meson.build`
+   special-cases a `native_llvm_path` under `/opt/homebrew/opt` and links in `libzstd.a` and
+   `libunwind.a`. But it tests the **path string**, so a symlink
+   (`toolchains/llvm15 -> /opt/homebrew/opt/llvm@15`) silently skips that branch and the link
+   fails on `_ZSTD_compress` and friends. Configure with the real path:
+   `-Dnative_llvm_path=/opt/homebrew/opt/llvm@15`. This avoids building LLVM 15 from source
+   entirely — which is just as well, because Apple clang 21 crashes (a compiler ICE in
+   TableGen) trying to build it.
+3. **A Wine prefix made before DXMT was installed cannot see it.** DXMT's DLLs depend on
+   `winemetal.dll`, which Wine links into the prefix when the prefix is created. Rebuild the
+   prefix after installing DXMT, or the failure is
+   `import_dll Library winemetal.dll ... not found` naming the wrong culprit.
+
 ## The 32-bit path fails, and that is the entitlement
 
 ```

@@ -17,11 +17,17 @@ identity and no Apple Developer account**:
 - arm64-native Wine builds and runs; it is a Mach-O arm64 binary and nothing in the process
   tree carries Rosetta's translated flag.
 - **64-bit Windows x86-64 programs run through FEX's emulation and print correctly.**
-- 32-bit Windows programs fail with `c000000d`. The emulator is built and installed; the
-  block is the address space, not a missing component. See `docs/findings.md`.
+- **Windows applications show real windows** — checked against the window server, not by eye.
+- **Direct3D 11 reaches the Mac's GPU**: from an emulated x86-64 process, DXMT reports
+  `adapter 0: Apple M3 Pro`, creates a device at feature level 11_1, and creates buffers,
+  textures and shaders.
 - The bottle manager creates, lists and runs programs (`cli/decanter run smoke app.exe`).
 
-Not built yet: the graphics stack (DXMT, MoltenVK). The tests above are console programs.
+- 32-bit Windows programs fail with `c000000d`. The emulator is built and installed; the
+  block is the address space, not a missing component. See `docs/findings.md`.
+
+Not built yet: MoltenVK and the Vulkan path for Direct3D 12, and a GUI. The interface is a
+command line for now.
 
 ## Why this exists
 
