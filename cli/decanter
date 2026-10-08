@@ -65,13 +65,25 @@ def runtime_variant() -> str:
 
 
 def base_env(meta: dict) -> dict:
+    """A clean environment, so host secrets never reach Windows processes.
+
+    Mirrors what Hadron's own launch script does: Wine is started from a minimal
+    environment rather than inheriting whatever the terminal happens to hold.
+    """
     prefix = bottle_dir(meta["name"]) / "prefix"
-    env = os.environ.copy()
-    env["WINEPREFIX"] = str(prefix)
-    env["PATH"] = f"{RUNTIME / 'bin'}:{env.get('PATH', '')}"
-    env["WINEDLLPATH"] = str(RUNTIME / "lib" / "wine" / "aarch64-windows")
-    # Wine's own diagnostics are noise for an application launcher; keep them one flag away.
-    env.setdefault("WINEDEBUG", os.environ.get("DECANTER_WINEDEBUG", "-all"))
+    env = {
+        "HOME": str(Path.home()),
+        "USER": os.environ.get("USER", "user"),
+        "LANG": os.environ.get("LANG", "en_US.UTF-8"),
+        "TMPDIR": os.environ.get("TMPDIR", "/tmp"),
+        "PATH": f"{RUNTIME / 'bin'}:/usr/bin:/bin:/usr/sbin:/sbin",
+        "WINEPREFIX": str(prefix),
+        "WINEDEBUG": os.environ.get("DECANTER_WINEDEBUG", ""),
+        "WINEDLLOVERRIDES": "mscoree,mshtml=",
+        # The runtime does not carry FreeType or GnuTLS; they come from arm64 Homebrew.
+        "DYLD_FALLBACK_LIBRARY_PATH": "/opt/homebrew/lib",
+        "FEX_DISKCACHE": "1",
+    }
     backend = meta.get("graphics", "wined3d")
     if backend == "dxmt":
         env["WINEDLLOVERRIDES"] = "d3d11,dxgi,d3d10core=n,b"

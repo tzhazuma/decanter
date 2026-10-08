@@ -11,9 +11,17 @@ Nobody has built a bottle manager aimed at "I need to run one Windows program fo
 
 ## Status
 
-**Early.** The runtime builds and runs 64-bit Windows programs on macOS 27 / Apple Silicon.
-32-bit Windows programs need the entitlement path (see below). Nothing here is a finished
-product.
+**Early, but the core works.** Verified on an M3 Pro / macOS 27.2 with **no code-signing
+identity and no Apple Developer account**:
+
+- arm64-native Wine builds and runs; it is a Mach-O arm64 binary and nothing in the process
+  tree carries Rosetta's translated flag.
+- **64-bit Windows x86-64 programs run through FEX's emulation and print correctly.**
+- 32-bit Windows programs fail with `c000000d`. The emulator is built and installed; the
+  block is the address space, not a missing component. See `docs/findings.md`.
+- The bottle manager creates, lists and runs programs (`cli/decanter run smoke app.exe`).
+
+Not built yet: the graphics stack (DXMT, MoltenVK). The tests above are console programs.
 
 ## Why this exists
 
