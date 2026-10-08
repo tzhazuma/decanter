@@ -120,7 +120,7 @@ cli/         the manager both front ends agree on, and what an exported app runs
 scripts/     runtime bootstrap, packaging, app build, Apple toolkit import, loader signing
 recipes/     known configurations (Visual C++ runtime, .NET)
 tools/       a Vulkan probe, an icon drawn rather than shipped, a screenshot tool
-docs/        guide.md first, then the research and the measurements behind it
+docs/        guide.md first, then the research, the measurements, and handoff.md for whoever continues
 patches/     what Decanter changes in each component it builds
 ```
 

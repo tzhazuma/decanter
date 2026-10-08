@@ -227,6 +227,7 @@ More, with the measurements behind each: [findings.md](findings.md).
 |---|---|
 | `docs/landscape.md` | the research behind the design, with sources |
 | `docs/findings.md` | what was measured, and the traps that cost the most time |
+| `docs/handoff.md` | the state of the work, and the defects to fix first |
 | `docs/wine-vulkan-internals.md` | how Wine finds a Vulkan driver |
 | `docs/entitlement.md` | the 32-bit question in full |
 | `recipes/README.md` | what a recipe is, and why one of them cannot work yet |
