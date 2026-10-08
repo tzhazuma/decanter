@@ -121,20 +121,76 @@ it under "Using 32-bit Software", with the 64-bit column "Not supported".
 
 **Conclusion: the productivity targets need a paid Apple Developer Program membership.**
 
+## Vulkan and Direct3D 12: built, and one extension short
+
+The whole open-source Vulkan path builds and installs:
+
+| Component | Artefact | State |
+|---|---|---|
+| KosmicKrisp, Mesa's Vulkan on Metal | `runtime/mesa/lib/libvulkan_kosmickrisp.dylib` | works: `vulkaninfo` reports `deviceName = Apple M3 Pro` |
+| Zink, Mesa's OpenGL on Vulkan | `runtime/mesa-zink/lib/libEGL.1.dylib` | built, wired through `WINE_MAC_OPENGL=egl` |
+| vkd3d-proton, D3D12 on Vulkan | `runtime/vkd3d-proton/x64/{d3d12,d3d12core}.dll` | loads, enumerates the adapter, **cannot create a device** |
+| DXVK's DXGI | `runtime/dxvk/x64/dxgi.dll`, staged as `dxgi_dxvk.dll` | installed |
+
+Through the bottle manager, a D3D12 program gets this far:
+
+```
+CreateDXGIFactory2: 0x00000000
+adapter 0: Apple M3 Pro
+err:vkd3d-proton:vkd3d_load_vk_instance_procs: Could not get instance proc addr
+    for 'vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR'.
+err:vkd3d-proton:vkd3d_instance_init: Failed to load instance procs, hr 0x80004005.
+D3D12CreateDevice: 0x80004005
+```
+
+The cause is narrow and named: **KosmicKrisp does not advertise
+`VK_KHR_cooperative_matrix`**, and vkd3d-proton 3.0.1 declares
+`vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR` as a required instance function
+(`libs/vkd3d/vulkan_procs.h`), so it gives up before it ever looks at a device. The driver
+does carry the extension's name (it appears in the library's strings) but does not expose the
+capability on this GPU. Direct3D 12 therefore needs either a KosmicKrisp that advertises
+cooperative matrix, or a vkd3d-proton that treats the function as optional.
+
+Direct3D 11 on DXMT is unaffected and works, which is what the productivity targets need.
+
+### Two traps in wiring this up
+
+1. **Copying a DLL into the prefix is not enough when Wine already has one.** Wine installs
+   its own `d3d12.dll` when the prefix is made, so a staging step that only fills gaps leaves
+   Wine's version in place and every D3D12 program fails to find a device. Compare and
+   replace.
+2. **The ICD's JSON names an absolute path.** `kosmickrisp_mesa_icd.aarch64.json` points at
+   the build directory it was configured with, so installing the driver elsewhere means
+   rewriting `library_path`, or nothing loads.
+
 ## The lessons that cost time
 
 1. `brew --prefix` decides which Homebrew the build uses. With `/usr/local/bin` ahead of
    `/opt/homebrew/bin` in `PATH` it resolves to the Intel Homebrew, and the build fails with
    `FreeType development files not found` — long after the real cause. Every script here
    exports `PATH=/opt/homebrew/bin:$PATH` first, and `scripts/env.sh` asserts the result.
-2. `git -C <dir> am <relative-path>` resolves the path **relative to `<dir>`**, not to the
+2. **Homebrew's clang cannot build Mesa here.** `env.sh` puts `$BREW/opt/llvm/bin` first on
+   `PATH` so `llvm-config` resolves, but that also makes `clang` mean LLVM 23, which looks for
+   its sysroot under `/Library/Developer/CommandLineTools/SDKs/` — where this machine has
+   nothing newer than `MacOSX26.2.sdk`. The failure reads
+   `no such sysroot directory: '/Library/Developer/CommandLineTools/SDKs/MacOSX27.sdk'`, and
+   only shows up in the Objective-C sanity check, so the build dies with
+   `Compiler ... cannot compile programs` and no mention of which compiler. Configure Mesa
+   with `CC=/usr/bin/clang CXX=/usr/bin/clang++ OBJC=/usr/bin/clang`: `llvm-config` stays on
+   `PATH` for Mesa to find LLVM, and the SDK is Xcode's.
+3. **A partial clone cannot take `git am --3way`.** `scripts/fetch.sh` clones Mesa with
+   `--filter=blob:none`; when a patch needs the three-way fallback, git tries to fetch the
+   blobs and dies with `remote error: upload-pack: not our ref`, leaving the repository
+   mid-`am`. Clone Mesa without the filter, or apply the queue with plain `git am`: the
+   patches were made against the pinned commit and 83 of 83 applied cleanly that way.
+4. `git -C <dir> am <relative-path>` resolves the path **relative to `<dir>`**, not to the
    current directory. A patch script that looks right applies nothing, and the build then
    succeeds without the patches. This cost a full rebuild.
-3. FEX needs its submodules. A `--depth 1 --filter=blob:none` clone followed by a checkout
+5. FEX needs its submodules. A `--depth 1 --filter=blob:none` clone followed by a checkout
    silently leaves `External/range-v3` and `Source/Common/cpp-optparse` empty, and CMake
    fails much later. Hadron's own `scripts/fetch.sh` does the submodule update; a hand-rolled
    fetch has to as well.
-4. A stale `.git/modules/*/index.lock` from an interrupted submodule update blocks the retry.
+6. A stale `.git/modules/*/index.lock` from an interrupted submodule update blocks the retry.
 
 ## Not yet done
 

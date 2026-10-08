@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import filecmp
 import shutil
 import subprocess
 import sys
@@ -64,6 +65,40 @@ def runtime_variant() -> str:
     return marker.read_text().strip() if marker.is_file() else "unknown"
 
 
+def runtime_has(*relative: str) -> bool:
+    return all((RUNTIME / part).exists() for part in relative)
+
+
+def stage_graphics(meta: dict) -> None:
+    """Put the graphics DLLs where the prefix will find them.
+
+    Wine links its builtins into a prefix when the prefix is made, so anything installed
+    into the runtime afterwards has to be copied in by hand. Doing it on every run is
+    cheap and keeps a bottle working after the runtime gains a layer.
+    """
+    system32 = bottle_dir(meta["name"]) / "prefix" / "drive_c" / "windows" / "system32"
+    if not system32.is_dir():
+        return
+    # D3D12 goes through vkd3d-proton; Wine's own cannot make a device, because DXGI here
+    # is DXMT's. DXVK's DXGI is what presents for vkd3d-proton's command queues, under the
+    # name DXMT loads it by.
+    #
+    # Wine installs its own d3d12.dll into the prefix, so this has to replace what is
+    # there rather than only fill a gap: copying only when the file is absent leaves Wine's
+    # version in place and every D3D12 program fails to find a device.
+    wants = [
+        (RUNTIME / "vkd3d-proton" / "x64" / "d3d12.dll", system32 / "d3d12.dll"),
+        (RUNTIME / "vkd3d-proton" / "x64" / "d3d12core.dll", system32 / "d3d12core.dll"),
+        (RUNTIME / "dxvk" / "x64" / "dxgi.dll", system32 / "dxgi_dxvk.dll"),
+    ]
+    for source, destination in wants:
+        if not source.is_file():
+            continue
+        if destination.is_file() and filecmp.cmp(source, destination, shallow=True):
+            continue
+        shutil.copy2(source, destination)
+
+
 def base_env(meta: dict) -> dict:
     """A clean environment, so host secrets never reach Windows processes.
 
@@ -71,6 +106,10 @@ def base_env(meta: dict) -> dict:
     environment rather than inheriting whatever the terminal happens to hold.
     """
     prefix = bottle_dir(meta["name"]) / "prefix"
+    library_path = "/opt/homebrew/lib"
+    if runtime_has("mesa-zink/lib/libEGL.1.dylib"):
+        library_path = f"{RUNTIME / 'mesa-zink' / 'lib'}:{library_path}"
+
     env = {
         "HOME": str(Path.home()),
         "USER": os.environ.get("USER", "user"),
@@ -81,12 +120,33 @@ def base_env(meta: dict) -> dict:
         "WINEDEBUG": os.environ.get("DECANTER_WINEDEBUG", ""),
         "WINEDLLOVERRIDES": "mscoree,mshtml=",
         # The runtime does not carry FreeType or GnuTLS; they come from arm64 Homebrew.
-        "DYLD_FALLBACK_LIBRARY_PATH": "/opt/homebrew/lib",
+        "DYLD_FALLBACK_LIBRARY_PATH": library_path,
         "FEX_DISKCACHE": "1",
     }
+
+    icd = RUNTIME / "mesa" / "share" / "vulkan" / "icd.d" / "kosmickrisp_mesa_icd.aarch64.json"
+    if icd.is_file():
+        # KosmicKrisp, Mesa's Vulkan on Metal. MoltenVK, which the loader would find
+        # otherwise, cannot create an instance under Wine.
+        env["VK_DRIVER_FILES"] = str(icd)
+        env["MESA_KK_EXPERIMENTAL"] = "dgc,xfb,sparse"
+
+    if runtime_has("mesa-zink/lib/libEGL.1.dylib") and icd.is_file():
+        # OpenGL: Wine's Mac driver uses Zink on KosmicKrisp through EGL. Apple's own
+        # OpenGL stops at 4.1 and is not used.
+        env["WINE_MAC_OPENGL"] = "egl"
+        env["MESA_LOADER_DRIVER_OVERRIDE"] = "zink"
+        env["DRIRC_CONFIGDIR"] = str(RUNTIME / "mesa-zink" / "share" / "drirc.d")
+
     backend = meta.get("graphics", "wined3d")
     if backend == "dxmt":
         env["WINEDLLOVERRIDES"] = "d3d11,dxgi,d3d10core=n,b"
+    if runtime_has("vkd3d-proton/x64/d3d12.dll"):
+        env["WINEDLLOVERRIDES"] = env["WINEDLLOVERRIDES"] + ";d3d12,d3d12core=n"
+        cache = prefix / "shadercache"
+        cache.mkdir(parents=True, exist_ok=True)
+        env["VKD3D_SHADER_CACHE_PATH"] = str(cache)
+
     env.update(meta.get("env", {}))
     return env
 
@@ -98,6 +158,7 @@ def ensure_prefix(meta: dict) -> None:
     print(f"decanter: creating prefix for {meta['name']} (first run takes a moment)")
     subprocess.run([str(runtime_bin()), "wineboot", "-u"], env=base_env(meta), check=False)
     apply_windows_version(meta)
+    stage_graphics(meta)
 
 
 def apply_windows_version(meta: dict) -> None:
@@ -185,6 +246,7 @@ def cmd_bottle_rm(args: argparse.Namespace) -> None:
 def cmd_run(args: argparse.Namespace) -> None:
     meta = load(args.bottle)
     ensure_prefix(meta)
+    stage_graphics(meta)
     executable = args.executable
     if Path(executable).is_file() and not executable.lower().endswith(".exe"):
         fail("expected a Windows executable")
