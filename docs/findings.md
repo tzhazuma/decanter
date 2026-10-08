@@ -158,7 +158,7 @@ Two requirements are still unmet, and the evidence narrows the first one a long 
   **falls back to the first physical device** (`libs/d3d12core/main.c`). So this explains the
   FIXME line and nothing else. The error that stops D3D12 is the next one.
 - **KosmicKrisp reports no transform feedback inside the Wine process, but does outside it.**
-  This is measured, not inferred:
+  Measured, not inferred:
 
   | Check | Result |
   |---|---|
@@ -166,14 +166,19 @@ Two requirements are still unmet, and the evidence narrows the first one a long 
   | `vulkaninfo` run natively with **the exact environment the bottle manager passes** | `driverName = KosmicKrisp`, `VK_EXT_transform_feedback` present |
   | The same environment visible inside Wine (`cmd /c set`) | `MESA_KK_EXPERIMENTAL=dgc,xfb,sparse` is there |
   | `VK_LOADER_DEBUG` inside Wine | the loader's own output appears, so native libraries in that process do read the environment |
+  | A Windows program asking its own driver (`tools/vkprobe.c`) | device `Apple M3 Pro`, **126** device extensions, no transform feedback |
+  | Natively, same driver and same environment | **152** device extensions, transform feedback present |
   | vkd3d-proton's view, with `MESA_KK_EXPERIMENTAL=all` | still `Lacking support for transform feedback` |
 
-  So the driver is the right one, the environment is right as seen from outside, and the
-  loader can read the environment — yet the ICD does not advertise the extension it needs a
-  variable to advertise. That is the thing to chase next, and it is one question now rather
-  than a search. A Windows-side Vulkan probe that enumerates device extensions from inside the
-  process would settle it; the one written here did not run, and its failure is not yet
-  explained.
+  **The two lists are not the same list, and the difference is not the environment variable.**
+  Extensions that Vulkan promoted to core in 1.2 and 1.3 — `VK_EXT_descriptor_indexing`,
+  `VK_EXT_extended_dynamic_state` — appear in the Wine list *as extensions*, which is what a
+  driver reporting a lower device version looks like, and there are extensions in each list
+  the other does not have. The probe was run at API version 1.1 and 1.3 with the same result,
+  so it is not the requested version either.
+
+  So what a Windows program sees is not what the driver publishes. That is the question to
+  chase next, and `tools/vkprobe.c` is the instrument for it.
 
 Direct3D 11 on DXMT is unaffected, is what the productivity targets need, and was re-checked
 after these changes.
