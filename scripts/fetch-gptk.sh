@@ -82,9 +82,14 @@ ditto "$source_dir/." "$TARGET/"
 log "done. This copy came from $dmg and is yours to keep; do not redistribute it."
 cat <<'AFTER'
 
-  One thing to know: the ARM64 runtime that Decanter builds today is a development build
-  whose graphics path is DXMT. D3DMetal is loaded by winemac.drv, and an arm64 D3DMetal is
-  not part of the preview releases yet -- CodeWeavers ship it in the x86_64 build only. If
-  Wine reports that it could not load D3DMetal, that is why, and it is not something this
-  script can fix: DXMT is the working Direct3D 11 path on arm64 today.
+  One thing to know before you expect this to work. Apple ship D3DMetal as an x86_64-only
+  framework, and the toolkit's whole Wine tree is x86_64 (redist/lib/wine contains only
+  x86_64-unix and x86_64-windows). An arm64 process cannot load it: the six .so forwarders
+  Wine opens are x86_64 Mach-O. UTM hit the same wall and ran their render server under
+  Rosetta to get around it. So on the arm64 runtime this script installs the files for the
+  day that changes, and Wine will not load D3DMetal until Apple publish an arm64 build --
+  CodeWeavers say theirs is coming with CrossOver 27.
+
+  On arm64 today the working path is DXMT for Direct3D 11 and vkd3d-proton on Mesa for
+  Direct3D 12. Nothing in this script is needed for either.
 AFTER

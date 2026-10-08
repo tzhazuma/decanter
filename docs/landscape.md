@@ -105,6 +105,46 @@ it require the user to download it from Apple themselves. Decanter does not use 
 - <https://github.com/3Shain/dxmt>
 - <https://github.com/KhronosGroup/MoltenVK>
 
+## Why D3DMetal cannot go into an arm64 Wine today
+
+This was checked carefully, because it is the obvious question once DXMT is working, and the
+answer is **no — and not for want of porting work**.
+
+| What | Architecture | Consequence |
+|---|---|---|
+| `D3DMetal.framework`, `libd3dshared.dylib` | **x86_64 only** | an arm64 process cannot load them at all |
+| `redist/lib/wine/` | **only `x86_64-unix/` and `x86_64-windows/`** | no `aarch64` and no `i386` anywhere |
+| the six `.so` forwarders Wine opens | x86_64 Mach-O | the unix side cannot be dlopened by an arm64 process |
+
+Two independent projects state the first row as a plain fact of the platform: UTM's
+[d3dmetal-native](https://github.com/utmapp/d3dmetal-native) ("D3DMetal.framework ships as
+x86_64; the whole process must be x86_64") and UTM's write-up of its Triton Direct3D 11
+driver ("D3DMetal only has an x86_64 slice"). Triton has to run its whole render server
+under Rosetta and lipo an arm64/x86_64 pair together to get anywhere
+(<https://blog.getutm.app/2026/introducing-triton-directx-11-driver-for-qemu/>).
+
+The integration code itself is not the obstacle. `dlls/winemac.drv/d3dmetal.c` is in
+CodeWeavers' published FOSS source under the LGPL, and projects like
+[sake](https://github.com/typester/sake) build that source and pair it with a user-supplied
+D3DMetal — **all of them on x86_64, all of them requiring Rosetta**. There is a second, deeper
+dependency: Apple's C++ forwarders need personality-routine unwinding that only Apple's Wine
+and CrossOver carry in `signal_x86_64.c`.
+
+CodeWeavers' own arm64 preview has no D3DMetal either, and their blog says Direct3D 12 support
+is coming, with the remaining gaps to be closed by CrossOver 27 in early 2027
+(<https://www.codeweavers.com/blog/mjohnson/2026/7/31/crossover-preview-the-right-to-bear-arm64-on-mac>).
+
+**So the blocker is a missing binary that only Apple can produce.** On arm64 today, DXMT is
+the Direct3D 11 path and vkd3d-proton on Mesa is the Direct3D 12 path. Anyone who wants
+D3DMetal today has to run x86_64 Wine under Rosetta — which is the thing this project exists
+to stop depending on.
+
+The one theoretical arm64 route is UTM's: a separate x86_64 process hosts D3DMetal and the
+arm64 main process shares textures and fences with it across the process boundary. That is a
+very large piece of work, and it still needs Apple's licence. `scripts/fetch-gptk.sh`
+installs a user's own toolkit copy into the runtime for the case where that changes.
+
+
 ## 6. What the alternatives are, and why they are not this
 
 | Project | Licence | Why it is not the answer here |

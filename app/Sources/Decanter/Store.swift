@@ -9,6 +9,7 @@ struct Bottle: Identifiable, Codable, Hashable {
     var graphics: String?
     var env: [String: String]?
     var programs: [Program]?
+    var shortcuts: [Shortcut]?
 
     var id: String { name }
 
@@ -16,6 +17,17 @@ struct Bottle: Identifiable, Codable, Hashable {
         var installer: String
         var when: String
     }
+
+    struct Shortcut: Codable, Hashable, Identifiable {
+        var name: String
+        var path: String
+        var id: String { name }
+    }
+}
+
+/// A bottle named by a sheet that is being presented.
+struct BottleRef: Identifiable, Hashable {
+    var id: String
 }
 
 /// What the runtime reports about itself.
@@ -39,6 +51,7 @@ final class Store: ObservableObject {
     @Published private(set) var log: String = ""
     @Published var busy: Bool = false
     @Published var presentNewBottle = false
+    @Published var presentAddProgram: BottleRef? = nil
 
     private let home: URL
     private let runtimeURL: URL
@@ -199,6 +212,35 @@ final class Store: ObservableObject {
 
     func applyRecipe(_ recipe: String, to bottle: String) {
         runTool(["recipe", "apply", bottle, recipe])
+    }
+
+    func addShortcut(to bottle: String, name: String, path: String) {
+        runTool(["shortcut", "add", bottle, name, path])
+    }
+
+    func removeShortcut(from bottle: String, name: String) {
+        runTool(["shortcut", "rm", bottle, name])
+    }
+
+    func setEnvironment(_ assignments: [String], in bottle: String) {
+        runTool(["env", bottle] + assignments)
+    }
+
+    /// Executables the bottle already has, for the "add a program" list.
+    func suggestPrograms(in bottle: String, completion: @escaping ([String]) -> Void) {
+        guard let cli = cliURL else { completion([]); return }
+        let process = Process()
+        process.executableURL = cli
+        process.arguments = ["shortcut", "suggest", bottle, "--limit", "60"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { completion([]); return }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let lines = String(data: data, encoding: .utf8)?
+            .split(separator: "\n").map(String.init) ?? []
+        completion(lines)
     }
 
     /// Pick a Windows program (or an installer) and hand it to the bottle.

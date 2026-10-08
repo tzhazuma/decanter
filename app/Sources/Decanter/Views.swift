@@ -24,13 +24,16 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $store.selection) {
-                Section("Bottles") {
-                    ForEach(store.bottles) { bottle in
-                        Label(bottle.name, systemImage: "shippingbox")
-                            .tag(bottle.name)
+            VStack(spacing: 0) {                List(selection: $store.selection) {
+                    Section("Bottles") {
+                        ForEach(store.bottles) { bottle in
+                            Label(bottle.name, systemImage: "shippingbox")
+                                .tag(bottle.name)
+                        }
                     }
                 }
+                Divider()
+                RuntimeStatusView()
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 220)
             .toolbar {
@@ -50,6 +53,64 @@ struct ContentView: View {
         .sheet(isPresented: $store.presentNewBottle) {
             NewBottleSheet()
         }
+        .sheet(item: $store.presentAddProgram) { ref in
+            AddProgramSheet(bottle: ref.id)
+        }
+    }
+}
+
+struct RuntimeStatusView: View {
+    @EnvironmentObject var store: Store
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let runtime = store.runtime {
+                Label(runtime.wineVersion, systemImage: "cpu")
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                HStack(spacing: 6) {
+                    Badge(text: runtime.variant,
+                          ok: true,
+                          help: runtime.variant == "dev"
+                            ? "Development runtime: no Apple Developer account needed, 64-bit programs only"
+                            : "Release runtime: runs 32-bit programs too")
+                    if runtime.supports32Bit {
+                        Badge(text: "32-bit", ok: true, help: "The 32-bit emulator is available")
+                    } else {
+                        Badge(text: "64-bit only", ok: false,
+                              help: "32-bit Windows programs need the release runtime, which needs a paid Apple Developer account")
+                    }
+                }
+                if !runtime.hasX86_64Emulator {
+                    Text("No x86-64 emulator installed.")
+                        .font(.caption2).foregroundStyle(.orange)
+                }
+            } else {
+                Label("No runtime", systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+}
+
+struct Badge: View {
+    let text: String
+    let ok: Bool
+    var help: String = ""
+
+    var body: some View {
+        Text(text)
+            .font(.caption2)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(ok ? Color.green.opacity(0.18) : Color.orange.opacity(0.18),
+                        in: Capsule())
+            .foregroundStyle(ok ? .green : .orange)
+            .help(help)
     }
 }
 
@@ -107,26 +168,53 @@ struct BottleView: View {
                 }
 
                 Section("Programs") {
-                    HStack {
-                        Button {
-                            store.chooseAndRun(in: bottle.name, installer: false)
-                        } label: {
-                            Label("Run a Program…", systemImage: "play")
+                    if let shortcuts = bottle.shortcuts, !shortcuts.isEmpty {
+                        ForEach(shortcuts) { shortcut in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(shortcut.name)
+                                    Text(shortcut.path)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button {
+                                    store.runProgram(in: bottle.name, path: shortcut.path)
+                                } label: {
+                                    Image(systemName: "play.fill")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Run \(shortcut.name)")
+                                Button {
+                                    store.removeShortcut(from: bottle.name, name: shortcut.name)
+                                } label: {
+                                    Image(systemName: "minus.circle")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Remove this shortcut")
+                            }
                         }
+                    } else {
+                        Text("No programs yet. Install one, then add it here.")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack {
                         Button {
                             store.chooseAndRun(in: bottle.name, installer: true)
                         } label: {
-                            Label("Install…", systemImage: "arrow.down.circle")
+                            Label("Install a Windows program…", systemImage: "arrow.down.circle")
                         }
-                    }
-                    if let programs = bottle.programs, !programs.isEmpty {
-                        ForEach(programs, id: \.installer) { program in
-                            LabeledContent((program.installer as NSString).lastPathComponent,
-                                           value: program.when)
+                        Button {
+                            store.chooseAndRun(in: bottle.name, installer: false)
+                        } label: {
+                            Label("Run once…", systemImage: "play")
                         }
-                    } else {
-                        Text("Nothing installed yet.")
-                            .foregroundStyle(.secondary)
+                        Button {
+                            store.presentAddProgram = BottleRef(id: bottle.name)
+                        } label: {
+                            Label("Add to the list…", systemImage: "plus")
+                        }
                     }
                 }
 
@@ -191,6 +279,69 @@ struct LogPane: View {
             }
             .frame(height: 180)
             .background(.background.secondary)
+        }
+    }
+}
+
+struct AddProgramSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) private var dismiss
+    let bottle: String
+
+    @State private var name = ""
+    @State private var path = ""
+    @State private var suggestions: [String] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Add a program to \(bottle)").font(.headline)
+
+            Form {
+                TextField("Name", text: $name)
+                TextField("Windows path", text: $path,
+                          prompt: Text("C:\\Program Files\\Vendor\\app.exe"))
+            }
+
+            if !suggestions.isEmpty {
+                Text("Already in this bottle — click to use:")
+                    .font(.caption).foregroundStyle(.secondary)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(suggestions, id: \.self) { suggestion in
+                            Button {
+                                path = suggestion
+                                if name.isEmpty {
+                                    name = ((suggestion as NSString)
+                                        .lastPathComponent as NSString)
+                                        .deletingPathExtension
+                                }
+                            } label: {
+                                Text(suggestion)
+                                    .font(.system(size: 11, design: .monospaced))
+                            }
+                            .buttonStyle(.link)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(height: 160)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Add") {
+                    store.addShortcut(to: bottle, name: name, path: path)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(name.isEmpty || path.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 560)
+        .onAppear {
+            store.suggestPrograms(in: bottle) { suggestions = $0 }
         }
     }
 }

@@ -223,6 +223,51 @@ def cmd_env(args: argparse.Namespace) -> None:
     print(f"updated {args.bottle!r}")
 
 
+def cmd_shortcut(args: argparse.Namespace) -> None:
+    meta = load(args.bottle)
+    shortcuts = meta.setdefault("shortcuts", [])
+
+    if args.shortcut_command == "list":
+        if not shortcuts:
+            print("no shortcuts")
+        for entry in shortcuts:
+            print(f"{entry['name']:<24} {entry['path']}")
+        return
+
+    if args.shortcut_command == "add":
+        shortcuts[:] = [s for s in shortcuts if s["name"] != args.name]
+        shortcuts.append({"name": args.name, "path": args.path})
+        shortcuts.sort(key=lambda s: s["name"].lower())
+        save(meta)
+        print(f"added {args.name!r} to {args.bottle!r}")
+        return
+
+    if args.shortcut_command == "rm":
+        before = len(shortcuts)
+        shortcuts[:] = [s for s in shortcuts if s["name"] != args.name]
+        if len(shortcuts) == before:
+            fail(f"no shortcut named {args.name!r}")
+        save(meta)
+        print(f"removed {args.name!r} from {args.bottle!r}")
+        return
+
+    if args.shortcut_command == "suggest":
+        # List the executables a bottle has, so the window can offer them. Windows paths,
+        # because that is what the program will be started with.
+        prefix = bottle_dir(args.bottle) / "prefix" / "drive_c"
+        found = []
+        for directory in ("Program Files", "Program Files (x86)"):
+            root = prefix / directory
+            if not root.is_dir():
+                continue
+            for path in root.rglob("*.exe"):
+                relative = path.relative_to(prefix)
+                found.append("C:\\" + str(relative).replace("/", "\\"))
+        for item in sorted(found)[: args.limit]:
+            print(item)
+        return
+
+
 def cmd_recipe_list(args: argparse.Namespace) -> None:
     for path in sorted(RECIPES.glob("*.json")):
         recipe = json.loads(path.read_text())
@@ -312,6 +357,25 @@ def main() -> None:
     env.add_argument("bottle")
     env.add_argument("assignments", nargs="*", help="NAME=value to set, NAME to unset")
     env.set_defaults(func=cmd_env)
+
+    shortcut = sub.add_parser("shortcut", help="programs to launch with one click")
+    shortcut_sub = shortcut.add_subparsers(dest="shortcut_command", required=True)
+    shortcut_list = shortcut_sub.add_parser("list", help="list shortcuts")
+    shortcut_list.add_argument("bottle")
+    shortcut_list.set_defaults(func=cmd_shortcut)
+    shortcut_add = shortcut_sub.add_parser("add", help="add a shortcut")
+    shortcut_add.add_argument("bottle")
+    shortcut_add.add_argument("name")
+    shortcut_add.add_argument("path", help="Windows path, e.g. 'C:\\\\Program Files\\\\Vendor\\\\app.exe'")
+    shortcut_add.set_defaults(func=cmd_shortcut)
+    shortcut_rm = shortcut_sub.add_parser("rm", help="remove a shortcut")
+    shortcut_rm.add_argument("bottle")
+    shortcut_rm.add_argument("name")
+    shortcut_rm.set_defaults(func=cmd_shortcut)
+    shortcut_suggest = shortcut_sub.add_parser("suggest", help="list executables in a bottle")
+    shortcut_suggest.add_argument("bottle")
+    shortcut_suggest.add_argument("--limit", type=int, default=40)
+    shortcut_suggest.set_defaults(func=cmd_shortcut)
 
     recipe = sub.add_parser("recipe", help="apply a known configuration")
     recipe_sub = recipe.add_subparsers(dest="recipe_command", required=True)
