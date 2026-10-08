@@ -35,7 +35,13 @@ if [[ $VARIANT == release ]]; then
 fi
 
 log "installing build dependencies (arm64 Homebrew)"
-brew install llvm lld bison meson ninja cmake pkg-config freetype gnutls 2>&1 | tail -3
+# vulkan-loader must be here *before* Wine is configured. Wine's configure prefers the
+# Khronos loader and falls back to MoltenVK, and a Wine built with the fallback opens
+# MoltenVK directly: VK_DRIVER_FILES is ignored, the runtime's own Vulkan driver never
+# loads, and a program sees a smaller set of device extensions than the driver really has.
+# That is invisible until something needs one of the missing extensions.
+brew install llvm lld bison meson ninja cmake pkg-config freetype gnutls \
+    molten-vk vulkan-loader vulkan-headers 2>&1 | tail -3
 
 if [[ ! -d "$CHECKOUT/.git" ]]; then
     log "cloning Hadron at $HADRON_REF"
@@ -73,4 +79,9 @@ log "making the runtime independent of the build directory"
 echo "$HADRON_REF" > "$RUNTIME/hadron-pin"
 
 log "done"
+if grep -qa "libMoltenVK.dylib" "$RUNTIME/lib/wine/aarch64-unix/win32u.so" 2>/dev/null; then
+    warn "this Wine opens MoltenVK instead of the Khronos loader, so it will ignore"
+    warn "VK_DRIVER_FILES and use fewer extensions than the driver offers."
+    warn "Install vulkan-loader and build Wine again."
+fi
 "$DECANTER_ROOT/cli/decanter" doctor

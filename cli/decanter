@@ -59,6 +59,30 @@ def runtime_bin() -> Path:
     return binary
 
 
+def vulkan_library() -> str:
+    """Which Vulkan library Wine was built to open.
+
+    configure prefers the Khronos loader and falls back to MoltenVK. The difference is not
+    cosmetic: the loader honours VK_DRIVER_FILES and can be pointed at the runtime's own
+    driver, while MoltenVK is opened directly and ignores it, which silently changes which
+    extensions a program sees. A Wine built before vulkan-loader was installed takes the
+    fallback, so say so.
+    """
+    binary = RUNTIME / "lib" / "wine" / "aarch64-unix" / "win32u.so"
+    if not binary.is_file():
+        return "unknown"
+    try:
+        names = subprocess.run(["strings", str(binary)], capture_output=True,
+                               text=True, errors="replace").stdout.split("\n")
+    except OSError:
+        return "unknown"
+    for name in ("libvulkan.1.dylib", "libMoltenVK.dylib"):
+        if name in names:
+            return name + ("" if name.startswith("libvulkan") else
+                           "  (Khronos loader bypassed: rebuild with vulkan-loader installed)")
+    return "unknown"
+
+
 def runtime_variant() -> str:
     """dev builds move Windows' low addresses above 4 GB; release builds need the entitlement."""
     marker = RUNTIME / "variant"
@@ -191,6 +215,13 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     for dll, what in (("xtajit64.dll", "x86-64 (ARM64EC)"), ("xtajit.dll", "32-bit x86 (WoW64)")):
         present = "yes" if (emulators / dll).is_file() else "no"
         print(f"  emulator      {what:<20} {present}")
+
+    # Which Vulkan library Wine opens decides everything about graphics: with the Khronos
+    # loader, VK_DRIVER_FILES is honoured and the runtime's own driver is used; with the
+    # MoltenVK fallback that configure picks when vulkan-loader is absent at build time, the
+    # loader is bypassed entirely and the driver is whatever MoltenVK offers.
+    print(f"  vulkan        {vulkan_library()}")
+
     if runtime_variant() == "dev":
         print("  note          dev runtime: 64-bit Windows programs only")
     print(f"  bottles       {len(list(BOTTLES.glob('*/bottle.json')))}")

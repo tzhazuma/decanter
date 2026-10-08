@@ -21,13 +21,14 @@ identity and no Apple Developer account**:
 - **Direct3D 11 reaches the Mac's GPU**: from an emulated x86-64 process, DXMT reports
   `adapter 0: Apple M3 Pro`, creates a device at feature level 11_1, and creates buffers,
   textures and shaders.
+- **Direct3D 12 works too**: vkd3d-proton on KosmicKrisp creates a device at feature level
+  12_0, a command queue and a resource, from the same emulated process.
 - The bottle manager creates, lists and runs programs (`cli/decanter run smoke app.exe`).
 
 - 32-bit Windows programs fail with `c000000d`. The emulator is built and installed; the
   block is the address space, not a missing component. See `docs/findings.md`.
 
-Not built yet: MoltenVK and the Vulkan path for Direct3D 12, and a GUI. The interface is a
-command line for now.
+Still missing: 32-bit programs (see the entitlement above) and a packaged release.
 
 ## Why this exists
 

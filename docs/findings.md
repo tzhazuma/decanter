@@ -157,33 +157,63 @@ Two requirements are still unmet, and the evidence narrows the first one a long 
   and carries no Vulkan identity, so neither test succeeds; the code then logs a FIXME and
   **falls back to the first physical device** (`libs/d3d12core/main.c`). So this explains the
   FIXME line and nothing else. The error that stops D3D12 is the next one.
-- **KosmicKrisp reports no transform feedback inside the Wine process, but does outside it.**
-  Measured five ways now, and three suspects have been eliminated:
+## Direct3D 12 works
 
-  | Check | Result |
-  |---|---|
-  | Which ICD the loader opens inside Wine (`VK_LOADER_DEBUG`) | exactly the runtime's KosmicKrisp |
-  | `vulkaninfo` natively, **the exact environment the bottle manager passes** | 152 extensions, transform feedback present |
-  | A Windows program asking its own driver (`tools/vkprobe.c`) | device `Apple M3 Pro`, 126 extensions, no transform feedback |
-  | Wine's own log of what the host reports (`WINEDEBUG=+vulkan`) | **127** host extensions, no transform feedback |
-  | Same, with `MESA_KK_EXPERIMENTAL=all` | unchanged |
+```
+CreateDXGIFactory2: 0x00000000
+adapter 0: Apple M3 Pro
+D3D12CreateDevice: 0x00000000
+feature level: 0xc000            (D3D_FEATURE_LEVEL_12_0)
+CreateCommandQueue: ok
+CreateCommittedResource 256x256: ok
+```
 
-  **Eliminated:** the ICD is not mis-selected (the loader names ours, and the host's
-  `VK_EXT_external_memory_metal` is KosmicKrisp's own extension); MoltenVK is not involved
-  (disabling it with `VK_LOADER_DRIVERS_DISABLE` changes nothing); and Wine is not filtering the
-  list away (it passes 127 host extensions through to 126 client ones, and the mechanism,
-  `is_device_extension_supported`, only drops extensions Wine has no thunks for).
+A D3D12 device, a command queue and a resource, from a program running as emulated x86-64
+code, on vkd3d-proton over KosmicKrisp. Direct3D 11 still goes through DXMT.
 
-  That leaves one statement, measured three separate ways: **the driver reports its
-  flag-gated extensions outside Wine and not inside it.** What the flags add is exactly what is
-  missing — `VK_EXT_device_generated_commands`, `VK_EXT_transform_feedback` and the rest of
-  the `MESA_KK_EXPERIMENTAL` set. The loader in that same process demonstrably reads the
-  environment, so this is not simply "the variable never arrives"; the next thing to find out
-  is what is different about how the ICD is reached from inside Wine.
+### The cause was a stale Wine, and one line explains it
 
-  `WINEDEBUG=+vulkan` (the channel is named `vulkan`, not `winevulkan`) prints Wine's own view
-  of the host: `init_physical_device Host physical device extensions:` followed by the list.
-  That is the best instrument here, better than the probe.
+Wine's `configure` prefers the Khronos loader and **falls back to MoltenVK**:
+
+```
+WINE_CHECK_SONAME(MoltenVK, vkGetInstanceProcAddr,
+                  [AC_DEFINE_UNQUOTED(SONAME_LIBVULKAN, ["$ac_cv_lib_soname_MoltenVK"])])
+```
+
+and `dlls/win32u/vulkan.c` then does `dlopen(SONAME_LIBVULKAN)`.
+
+The first Wine build here ran **before `vulkan-loader` was installed** (it arrived with the
+Vulkan stack, later), so `configure` took the fallback and baked `libMoltenVK.dylib` into
+`win32u.so`. Wine then opened MoltenVK directly — bypassing the Khronos loader altogether, so
+`VK_DRIVER_FILES` did nothing and the runtime's own driver never loaded. The two builds say it
+plainly:
+
+| `strings win32u.so` | `libvulkan.1.dylib` | `libMoltenVK.dylib` |
+|---|---|---|
+| the runtime's copy | 0 | **1** |
+| the current build tree | **1** | 0 |
+
+Refreshing the runtime from the current build fixed it in one step: the probe went from 126
+device extensions to **149**, `VK_EXT_transform_feedback` and `VK_EXT_device_generated_commands`
+appeared, and vkd3d-proton accepted the device.
+
+Every earlier symptom follows from that one line. MoltenVK has no transform feedback and no
+device-generated commands, which is exactly what vkd3d-proton requires before it will make a
+device; it reports 126 device extensions where KosmicKrisp reports 149; and
+`MESA_KK_EXPERIMENTAL` had no effect because it is a KosmicKrisp variable and KosmicKrisp was
+never loaded.
+
+`scripts/bootstrap-runtime.sh` now installs `vulkan-loader` **before** building Wine and
+warns if `win32u.so` still names MoltenVK, and `cli/decanter doctor` reports which library
+Wine was built to open.
+
+### What this cost, and what would have caught it
+
+The lesson is not about Direct3D. It is that **a fallback chosen silently by a configure
+script is invisible at run time**. Wine logged nothing about opening MoltenVK; from outside,
+MoltenVK and KosmicKrisp both report a device called "Apple M3 Pro" with a plausible extension
+list. What found it was `DYLD_PRINT_LIBRARIES=1`, which prints what is actually loaded rather
+than what was configured — worth reaching for far earlier than it was.
 
 Direct3D 11 on DXMT is unaffected, is what the productivity targets need, and was re-checked
 after these changes.
