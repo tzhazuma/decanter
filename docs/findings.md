@@ -150,20 +150,34 @@ after:   fixme:d3d12_find_physical_device: Could not find Vulkan physical device
          D3D12CreateDevice: 0x80070057
 ```
 
-Two requirements are still unmet, and they are separate problems:
+Two requirements are still unmet, and the evidence narrows the first one a long way:
 
-- **vkd3d-proton cannot match a Vulkan device to the DXGI adapter.** The adapter DXGI
-  enumerates is DXMT's, built on Metal, and it carries no Vulkan identity for vkd3d-proton to
-  match against.
-- **Transform feedback is off.** KosmicKrisp advertises `VK_EXT_transform_feedback` only when
-  `MESA_KK_EXPERIMENTAL` contains `xfb`, and the driver does advertise it when the variable is
-  set — confirmed with `vulkaninfo`. The variable is in the environment the bottle manager
-  passes, so the remaining question is whether the Vulkan loader inside Wine reaches
-  KosmicKrisp at all, rather than some other ICD. Testing that needs a way to see the loader's
-  own choice from inside a Wine process, which is the next thing to build.
+- **vkd3d-proton cannot match a Vulkan device to the DXGI adapter — and that is not fatal.**
+  It matches by LUID/UUID, then by PCI vendor and device ID. DXMT's adapter is built on Metal
+  and carries no Vulkan identity, so neither test succeeds; the code then logs a FIXME and
+  **falls back to the first physical device** (`libs/d3d12core/main.c`). So this explains the
+  FIXME line and nothing else. The error that stops D3D12 is the next one.
+- **KosmicKrisp reports no transform feedback inside the Wine process, but does outside it.**
+  This is measured, not inferred:
+
+  | Check | Result |
+  |---|---|
+  | Which ICD the loader opens inside Wine (`VK_LOADER_DEBUG=all`) | exactly `runtime/mesa/lib/libvulkan_kosmickrisp.dylib`, nothing else |
+  | `vulkaninfo` run natively with **the exact environment the bottle manager passes** | `driverName = KosmicKrisp`, `VK_EXT_transform_feedback` present |
+  | The same environment visible inside Wine (`cmd /c set`) | `MESA_KK_EXPERIMENTAL=dgc,xfb,sparse` is there |
+  | `VK_LOADER_DEBUG` inside Wine | the loader's own output appears, so native libraries in that process do read the environment |
+  | vkd3d-proton's view, with `MESA_KK_EXPERIMENTAL=all` | still `Lacking support for transform feedback` |
+
+  So the driver is the right one, the environment is right as seen from outside, and the
+  loader can read the environment — yet the ICD does not advertise the extension it needs a
+  variable to advertise. That is the thing to chase next, and it is one question now rather
+  than a search. A Windows-side Vulkan probe that enumerates device extensions from inside the
+  process would settle it; the one written here did not run, and its failure is not yet
+  explained.
 
 Direct3D 11 on DXMT is unaffected, is what the productivity targets need, and was re-checked
 after these changes.
+
 
 
 ### Two traps in wiring this up
