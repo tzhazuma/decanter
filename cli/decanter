@@ -15,6 +15,7 @@ import filecmp
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -294,6 +295,39 @@ def base_env(meta: dict) -> dict:
     return env
 
 
+def run_wine_streaming(command: list, meta: dict) -> int:
+    """Run a Windows program with its output on a file rather than a pipe.
+
+    Electron's Node reads stderr lazily, and when Wine hands it a pipe it fails with EBADF
+    and the application dies before it draws anything — which is what a window that collects
+    output through NSPipe gives it. A file it handles, so Wine writes to a file here and the
+    bytes are forwarded to our own stdout, a pipe only Python ever writes to.
+    """
+    with tempfile.NamedTemporaryFile(prefix="decanter-", suffix=".log", delete=False) as sink:
+        log = Path(sink.name)
+        process = subprocess.Popen(command, env=base_env(meta), stdout=sink, stderr=sink)
+        position = 0
+        while process.poll() is None:
+            position = forward_output(log, position)
+            time.sleep(0.05)
+        forward_output(log, position)
+    log.unlink(missing_ok=True)
+    return process.returncode
+
+
+def forward_output(log: Path, position: int) -> int:
+    try:
+        with open(log, "rb") as handle:
+            handle.seek(position)
+            data = handle.read()
+    except OSError:
+        return position
+    if data:
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+    return position + len(data)
+
+
 def ensure_prefix(meta: dict) -> None:
     prefix = bottle_dir(meta["name"]) / "prefix"
     if (prefix / "drive_c").is_dir():
@@ -466,7 +500,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         fail("expected a Windows executable")
     command = [str(runtime_bin()), executable, *args.arguments]
     print(f"decanter: {' '.join(command)}")
-    raise SystemExit(subprocess.run(command, env=base_env(meta)).returncode)
+    raise SystemExit(run_wine_streaming(command, meta))
 
 
 def cmd_install(args: argparse.Namespace) -> None:
@@ -476,7 +510,7 @@ def cmd_install(args: argparse.Namespace) -> None:
         fail(f"no such file: {installer}")
     ensure_prefix(meta)
     print(f"decanter: running {installer.name} in bottle {args.bottle!r}")
-    code = subprocess.run([str(runtime_bin()), str(installer)], env=base_env(meta)).returncode
+    code = run_wine_streaming([str(runtime_bin()), str(installer)], meta)
     if code == 0:
         meta.setdefault("programs", []).append({"installer": str(installer), "when": time.strftime("%Y-%m-%dT%H:%M:%S")})
         save(meta)
@@ -665,9 +699,8 @@ def cmd_launch(args: argparse.Namespace) -> None:
         fail(f"{bundle} does not say what to run")
 
     program = meta["shortcuts"][0]
-    raise SystemExit(subprocess.run(
-        [str(runtime_bin()), program["path"], *program.get("args", [])],
-        env=base_env(meta)).returncode)
+    raise SystemExit(run_wine_streaming(
+        [str(runtime_bin()), program["path"], *program.get("args", [])], meta))
 
 
 def cmd_recipe_list(args: argparse.Namespace) -> None:
@@ -704,8 +737,7 @@ def cmd_recipe_apply(args: argparse.Namespace) -> None:
             # recipe can be non-interactive instead of waiting for someone to click Next.
             arguments = step.get("args", [])
             print(f"  running {step['run']} {' '.join(arguments)} — {step.get('note', '')}".rstrip(" —"))
-            subprocess.run([str(runtime_bin()), step["run"], *arguments],
-                           env=base_env(meta), check=False)
+            run_wine_streaming([str(runtime_bin()), step["run"], *arguments], meta)
         elif "set" in step:
             key, value = step["set"]
             meta.setdefault("env", {})[key] = value

@@ -218,6 +218,11 @@ get `1.0`.
     `./cli/decanter run` or set `WINEPREFIX`.
 14. Debug channels: `WINEDEBUG=+vulkan` (not `+winevulkan`); `DYLD_PRINT_LIBRARIES=1` shows
     what actually loaded, which is not always what was configured.
+15. **Never give Wine's stdio a pipe.** Electron's Node reads stderr lazily and fails with
+    `open EBADF` on a pipe handle under Wine — the application dies before drawing anything
+    and only an `Error` dialog remains. This was the whole "VS Code hangs when launched from
+    the window" bug (the window collects output through NSPipe). The CLI keeps Wine's output
+    on a file and forwards it (`run_wine_streaming`); do not "simplify" that back to a pipe.
 
 Fuller versions with evidence: `docs/findings.md`; loader mechanics in
 `docs/wine-vulkan-internals.md`.

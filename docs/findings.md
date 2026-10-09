@@ -363,7 +363,10 @@ is not evidence of a window's size — it has been wrong for a native SwiftUI wi
 hand-written Win32 window and for this one. And a screenshot is only as good as the geometry it
 was taken with.
 
-## The second VS Code report, and a hang that could not be reproduced
+## The second VS Code report: an EBADF in Node, found and fixed
+
+**Found, later the same day — see "The cause" at the end of this section.** The account below is
+how the hunt went before the reproduction was built.
 
 On 2026-10-09 the report came back: VS Code "still" fails — an error appears and no window.
 The run behind it was found still hanging from the night before. Started through the window at
@@ -393,3 +396,32 @@ workbench renders. What was checked, so a later attempt need not repeat it:
 If it recurs: the window's **Stop** button (added the same day) kills the bottle's session, and
 a second launch is the workaround. The evidence is in the unified log at 2026-10-08 23:39
 (syspolicyd, launchd, runningboardd, and wine processes 51244–51282).
+
+### The cause: Node reads stderr lazily, and Wine gave it a pipe
+
+Reproduced, finally, by rebuilding the window's own way of launching things: a small Swift
+program using `Foundation.Process`, one `Pipe` for stdout and stderr, a `readabilityHandler`
+draining it, and the window's exact environment. The same command that works from a shell hung
+from that program — and its main process had put up a window titled **Error**. Asked directly
+(a probe compiled for the bottle enumerated the dialog's controls), it said:
+
+    A JavaScript error occurred in the main process
+    Uncaught Exception:
+    Error: open EBADF
+        at new Socket (node:net:651:13)
+        at createWritableStdioStream (node:internal/bootstrap/switches/is_main_thread:83:18)
+        at process.getStderr [as stderr] (node:internal/bootstrap/switches/is_main_thread:175:12)
+
+Node builds its stdio streams lazily. When the descriptor is a file it wraps it as a file; when
+it is a pipe it wraps it as a pipe socket — and under Wine the pipe handle it gets is not one it
+can use, so the first write to stderr throws **EBADF**, the main process dies before it draws
+anything, and what remains is the error dialog and a process that never shows a window. That is
+the whole difference between `decanter run …` from a shell (output redirected to a file: works)
+and the same command from the window (output collected through NSPipe: dies at once).
+
+The fix is in the command line tool, not the window: `run_wine_streaming()` gives Wine a file
+for its output and forwards the bytes to its own stdout — a pipe only Python ever writes, and
+Python does not have this problem. Applied to `run`, `install`, `launch` and recipe steps.
+Verified by rerunning the same Foundation.Process reproduction: the process tree comes up
+complete, the Welcome window renders, and the workbench answers the DevTools protocol with a
+full-page screenshot.

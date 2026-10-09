@@ -45,6 +45,9 @@ The CLI is the single source of behaviour; the window only shells out to it.
   Direct3D 12 breaks. `doctor` says which library Wine opens.
 - `CGWindowListCopyWindowInfo` (and `screencapture -l`) lie about Wine window geometry — ask
   Windows (`windowinfo.exe`) or use `tools/devtools-shot.py`.
+- **Never hand Wine's stdio a pipe**: Electron's Node reads stderr lazily and dies with
+  `open EBADF` on one — that was the "VS Code hangs when launched from the window" bug. The
+  CLI runs Wine with its output on a file (`run_wine_streaming`) and forwards the bytes.
 - Bottle env vars shadow the runtime's computed ones (`DYLD_FALLBACK_LIBRARY_PATH`,
   `VK_DRIVER_FILES`); an empty value is not "unset".
 - `cp -Rc src dst` nests when `dst` exists; use `cp -Rc "$SRC"/. "$DST"/`.
