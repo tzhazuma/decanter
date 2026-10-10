@@ -71,6 +71,21 @@ which is why an out-of-tree patch set is needed today.
 / vkd3d-proton / Mesa for graphics, integrated as a Steam Play tool. Decanter pins a Hadron
 revision and reuses its patch queue rather than duplicating years of work.
 
+### Is the low-address ban a macOS thing? It is an Apple Silicon thing
+
+| Platform | The bottom of the address space | Below 4 GB | How the Windows layout gets there |
+|---|---|---|---|
+| Windows, x86 / x64 / arm64 | first 64 KB reserved (null-deref guard) | ordinary — 32-bit processes live entirely below it, and KUSER_SHARED_DATA is mapped at 0x7ffe0000 in every process | natively; nothing to arrange |
+| Linux, x86_64 / arm64 | `mmap_min_addr` (a few KB by kernel default, 64 KB on common distributions) | ordinary — any process may map there | natively; Wine maps 0x7ffe0000 and the low structures as it does on Windows |
+| macOS, x86_64 | `__PAGEZERO` 4 GB by default | allowed if the binary is relinked with a small pagezero (`-pagezero_size 0x10000`) — Wine on Intel Macs did exactly that, no Apple permission involved | relink the loader |
+| macOS, arm64 | `__PAGEZERO` 4 GB, and the low range is refused outright | **forbidden without the cross-architecture entitlement** — `mmap(0x7ffe0000)` fails with "Cannot allocate memory" | the entitlement (release variant), or move the structures above 4 GB (dev variant) |
+
+Sources: the x86_64 `-pagezero_size` route and the ARM64 question,
+<https://developer.apple.com/forums/thread/655950>; KUSER_SHARED_DATA is a fixed user-mode
+mapping on Windows — its kernel-mode address was randomised in 2022 as an exploit mitigation,
+<https://msrc.microsoft.com/blog/2022/04/randomizing-the-kuser_shared_data-structure-on-windows/>;
+the arm64 refusal is measured on the target Mac — see `entitlement.md`.
+
 ## 4. The entitlement is the real gate
 
 Windows needs the low address space. Granting it needs
