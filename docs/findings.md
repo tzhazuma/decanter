@@ -460,7 +460,17 @@ with `--no-opt`, so it is not TurboFan-specific. FEX's own SMC configuration is 
   five minutes of CPU getting there. Set per bottle with `decanter env <bottle> FEX_SMCCHECKS=full`
   and drop `--js-flags=--jitless` from the shortcut, if the trade is ever wanted.
 - The **win32-arm64 build of VS Code** (native, no FEX) starts and then page-faults inside Wine
-  (`Unhandled page fault on read access`), so the native route is not open either.
+  (`Unhandled page fault on read access to 000000007FFE0296`) — and this one has a definite
+  cause rather than "not supported yet". Hadron's patch
+  `patches/wine/0003-ntdll-Allow-building-with-KUSER_SHARED_DATA-above-4G.patch` moves
+  KUSER_SHARED_DATA from its fixed Windows address 0x7FFE0000 to 0x1007FFE0000, because arm64
+  macOS refuses to map memory below 4 GB (and between 4 GB and 0x7000000000) without the
+  cross-architecture entitlement — `mmap(0x7FFE0000)` here fails with "Cannot allocate memory".
+  Wine's own code and the ARM64EC thunks were patched to use the moved page, and x86-64 programs
+  under FEX work; but a native arm64 program that reads the hardcoded 0x7FFE0000 address — as
+  this build does — hits an unmapped page. The patch says it plainly: "Only 64-bit programs that
+  don't hardcode the address work in this mode." The arm64 route therefore cannot be fixed on
+  the dev runtime; it needs the same entitlement the 32-bit programs need.
 
 `--js-flags=--jitless` stays the usable configuration: the interpreter is slow, but its code is
 hot and cached, while a JIT keeps writing new code and pays FEX's self-modification price.

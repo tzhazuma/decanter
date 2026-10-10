@@ -105,3 +105,16 @@ For 32-bit Windows software that has no alternative, the honest order is: try ro
 decide between route 1 (free, one machine, weakened) and paying for the Developer Program
 ($99/year, no security change, and the only path that can ship to other people).
 
+## The same wall, one floor up: arm64 programs that hardcode KUSER_SHARED_DATA
+
+The entitlement is not only about 32-bit address space. Windows keeps a shared read-only page,
+KUSER_SHARED_DATA, at a fixed address — 0x7FFE0000 — in every process, and plenty of native
+programs read it directly. Without the entitlement macOS refuses that mapping:
+`mmap(0x7FFE0000)` fails with "Cannot allocate memory". So the dev runtime moves the page to
+0x1007FFE0000 and patches Wine's own code and the ARM64EC thunks to use it; x86-64 programs
+under FEX work, but a native arm64 program that reads the hardcoded address does not — the
+win32-arm64 build of VS Code page-faults on exactly that read. The release runtime maps the
+page where Windows puts it, so with the entitlement both the 32-bit programs and those arm64
+programs work. (Hadron's patch says it plainly: "Only 64-bit programs that don't hardcode the
+address work in this mode.")
+
