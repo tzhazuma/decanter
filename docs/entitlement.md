@@ -5,6 +5,24 @@ Windows applications expect certain structures at fixed addresses below 4 GB, an
 does not normally hand out a low address space, so a Wine loader that needs one must be
 granted `com.apple.developer.cross-architecture-support`.
 
+## Why the low pages are kept unmapped
+
+`__PAGEZERO` — the segment every arm64 binary starts with — is 4 GB of *nothing*: address zero
+to 0x100000000, no access, `filesize 0` (`otool -l /bin/bash` shows it). Its purpose is the
+oldest defence in the book: a null or small pointer dereference lands there and faults
+immediately, instead of reaching memory an attacker arranged. Whole exploit classes — null-page
+mapping, low-address spraying — live in the low pages, and keeping them unmapped closes them.
+The region above it, up to 0x7000000000, is the system's own layout — the main binary at
+0x100000000, the dyld shared cache at 0x180000000 — and is not handed out either; an `mmap` at
+0x7FFE0000 on this machine fails with "Cannot allocate memory".
+
+Programs from other architectures need exactly what is forbidden here: x86 keeps fixed
+structures below 4 GB (KUSER_SHARED_DATA at 0x7ffe0000, the TEB and PEB, image bases), and a
+32-bit program's every pointer lives there. The entitlement unlocks an address space laid out
+the way the foreign architecture expects — which is, in effect, permission to lower a security
+boundary, so Apple issues it only per team, through provisioning profiles, and that is what a
+Developer Program membership buys.
+
 ## Why it cannot be worked around
 
 | Approach | Why it fails |
