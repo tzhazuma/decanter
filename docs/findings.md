@@ -446,3 +446,21 @@ Switching the bottle to the `dxvk` backend fixes it outright: DXVK presents thro
 has no such limit, the window-server capture then shows the whole workbench, and the errors are
 gone. **DXVK is now the default backend for that reason**, and DXMT remains for anything that
 would rather go straight to Metal.
+
+## Can the JIT run? No — and the ARM64 build does not either
+
+VS Code without `--js-flags=--jitless` crashes its renderer under FEX:
+`renderer process gone (reason: crashed, code: -1073741819)` — an access violation, and the same
+with `--no-opt`, so it is not TurboFan-specific. FEX's own SMC configuration is the lever:
+
+- `FEX_SMCCHECKS=mtrack` (the default): crashes — the tracking misses something V8 does to its
+  own code pages.
+- `FEX_SMCCHECKS=full`: **no crash** — the workbench does come up — but the checking costs so
+  much that startup takes two to three minutes instead of thirty seconds, and the renderer burns
+  five minutes of CPU getting there. Set per bottle with `decanter env <bottle> FEX_SMCCHECKS=full`
+  and drop `--js-flags=--jitless` from the shortcut, if the trade is ever wanted.
+- The **win32-arm64 build of VS Code** (native, no FEX) starts and then page-faults inside Wine
+  (`Unhandled page fault on read access`), so the native route is not open either.
+
+`--js-flags=--jitless` stays the usable configuration: the interpreter is slow, but its code is
+hot and cached, while a JIT keeps writing new code and pays FEX's self-modification price.
