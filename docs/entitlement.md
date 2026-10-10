@@ -23,6 +23,33 @@ the way the foreign architecture expects — which is, in effect, permission to 
 boundary, so Apple issues it only per team, through provisioning profiles, and that is what a
 Developer Program membership buys.
 
+## How the check works at launch
+
+Nothing here needs the network. The authorisation travels inside the bundle:
+
+- The **code signature** carries the entitlements, as a blob covered by the signature itself.
+- The bundle embeds an **`embedded.provisionprofile`** — a plist that Apple signs with
+  CMS/PKCS#7, listing the entitlements it authorises, the certificates allowed to sign with it,
+  the team, an expiry date, and (for development profiles) the UDIDs of machines allowed to run
+  it.
+
+At exec, the kernel hands validation to **`amfid`**, the local daemon — the one whose verdicts
+appear in the log as `amfid: … not valid: The file is adhoc signed or signed by an unknown
+certificate chain`. Locally, it checks that the signature is intact and chains to Apple's roots,
+that every restricted entitlement on the binary appears in the embedded profile, and that the
+profile is Apple-signed, unexpired, and names the signing certificate. Pass, and the process
+runs; fail, and the kernel kills it before it executes a single instruction — the `Killed: 9`
+measured below. No Apple server is consulted, and forging a profile would take Apple's private
+key. What does need the network: obtaining the profile (the developer portal) and notarisation,
+which is a separate Gatekeeper layer and can be stapled for offline machines.
+
+Look at the two halves yourself:
+
+```sh
+security cms -D -i Decanter_Loader_Dev.provisionprofile | plutil -p - | grep -A12 Entitlements
+codesign -d --entitlements - --xml ./Decanter | plutil -p -
+```
+
 ## Why it cannot be worked around
 
 | Approach | Why it fails |
