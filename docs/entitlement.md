@@ -58,6 +58,11 @@ codesign -d --entitlements - --xml ./Decanter | plutil -p -
 | Disable SIP / boot-arg `amfi_get_out_of_my_way=1` | Works, but asking users to weaken their system security is not a shipping option, and CodeWeavers say the same |
 | Move the structures above 4 GB | This is what the `--dev` build does. It works for 64-bit programs, which compute addresses themselves. It fails for 32-bit programs, whose pointers can only reach 4 GB |
 
+Killing `amfid` is not a route either. It is a launchd-protected daemon on the sealed system
+volume, and the enforcement fails closed: with validation impossible, processes are killed
+rather than allowed, so removing it breaks the machine instead of unlocking anything. What can
+be weakened is the policy around it — which is what the routes below do.
+
 ## Getting it
 
 Written from Hadron's `docs/apple-developer-setup.md`, which is the most complete public
