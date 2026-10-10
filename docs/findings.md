@@ -425,3 +425,24 @@ Python does not have this problem. Applied to `run`, `install`, `launch` and rec
 Verified by rerunning the same Foundation.Process reproduction: the process tree comes up
 complete, the Welcome window renders, and the workbench answers the DevTools protocol with a
 full-page screenshot.
+
+## The transparent window: DXMT cannot present a cross-process swapchain
+
+With the EBADF fixed, VS Code started from the window — and its window came up **transparent**:
+title bar, no content, the desktop showing through. The log said why:
+
+    err:   CreateSwapChain: cross-process swapchain not supported yet
+    ERROR:ui\gl\angle_platform_impl.cc:47] SwapChain11.cpp:640 ... HRESULT: 0x80004005
+    ERROR:ui\gl\gl_surface_egl.cc:434] eglCreateWindowSurface failed with error EGL_BAD_ALLOC
+
+Chromium's GPU process renders for windows owned by the browser process, so the swapchain has
+to cross a process boundary; DXMT refuses that, ANGLE's Direct3D 11 backend then cannot make a
+surface, and nothing is ever painted. Every earlier "VS Code renders" check went through
+DevTools, which photographs the *page*, not the presented window — so this had been wrong all
+along without being seen. The instrument that shows the difference is the window-server capture,
+`screencapture -l <window id>`.
+
+Switching the bottle to the `dxvk` backend fixes it outright: DXVK presents through Vulkan and
+has no such limit, the window-server capture then shows the whole workbench, and the errors are
+gone. **DXVK is now the default backend for that reason**, and DXMT remains for anything that
+would rather go straight to Metal.

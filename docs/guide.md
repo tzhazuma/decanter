@@ -98,13 +98,12 @@ have done that, because it is a confusing failure when you have: see
 
 ## Graphics
 
-There is no setting to choose: the layers are installed and each Direct3D version goes to the
-one built for it.
+Each Direct3D version goes to the layer built for it:
 
 | What the program uses | Where it goes |
 |---|---|
 | Direct3D 9 | DXVK, on KosmicKrisp, on Metal |
-| Direct3D 10 and 11 | DXMT, straight to Metal |
+| Direct3D 10 and 11 | DXVK, on KosmicKrisp — or DXMT, straight to Metal |
 | Direct3D 12 | vkd3d-proton, on KosmicKrisp |
 | Vulkan | KosmicKrisp, Mesa's Vulkan on Metal |
 | OpenGL | Zink on KosmicKrisp — 4.6, above the Mac's own 4.1 |
@@ -116,13 +115,15 @@ configurations, and each says where every Direct3D version goes:
 
 | Backend | Direct3D 9 | 10 and 11 | 12 |
 |---|---|---|---|
-| `dxmt` (default) | DXVK on KosmicKrisp | **DXMT on Metal** | vkd3d-proton |
-| `dxvk` | DXVK on KosmicKrisp | **DXVK on KosmicKrisp** | vkd3d-proton |
+| `dxmt` | DXVK on KosmicKrisp | **DXMT on Metal** | vkd3d-proton |
+| `dxvk` (default) | DXVK on KosmicKrisp | **DXVK on KosmicKrisp** | vkd3d-proton |
 
-`dxmt` is the default because going straight to Metal is the shorter path. `dxvk` is worth
-trying when a program does something DXMT gets wrong — the two are independent
-implementations, and a bug in one is often not in the other. `./cli/decanter bottle info` prints
-the table for a bottle, and so does the window.
+`dxvk` is the default because Chromium and Electron applications — VS Code among them — present
+through a cross-process swapchain, which DXMT does not support yet: a DXMT window comes up with
+nothing painted in it. `dxmt` is worth choosing when a program would rather go straight to
+Metal, and it is the shorter path there; the two are independent implementations, and a bug in
+one is often not in the other. `./cli/decanter bottle info` prints the table for a bottle, and
+so does the window.
 
 Everything older than Direct3D 9 is Wine's own, and Direct3D 12 is always vkd3d-proton: Wine's
 own cannot make a device here, because DXGI belongs to whichever backend is chosen.

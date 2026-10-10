@@ -74,7 +74,11 @@ GRAPHICS = {
                      "11": "DXVK on KosmicKrisp", "12": "vkd3d-proton on KosmicKrisp"},
     },
 }
-DEFAULT_GRAPHICS = "dxmt"
+# DXVK is the default because Chromium and Electron applications present through a
+# cross-process swapchain, which DXMT does not support yet — a DXMT window comes up with
+# nothing painted in it. DXMT stays available for anything that would rather go straight
+# to Metal.
+DEFAULT_GRAPHICS = "dxvk"
 
 
 def graphics_of(meta: dict) -> str:

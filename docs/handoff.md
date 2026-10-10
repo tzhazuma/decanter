@@ -256,8 +256,8 @@ Fuller versions with evidence: `docs/findings.md`; loader mechanics in
    "DXMT"; `bottle create --graphics` accepts only `dxmt|dxvk` (`cli/decanter:685`), so
    creating a bottle with the default selection fails with an argparse error, and DXVK cannot
    be chosen at creation at all. (The bottle *detail* picker is fine — it uses the `Backend`
-   enum, and legacy `wined3d` values map to `dxmt` for existing bottles.) Fix the sheet to
-   offer `dxmt`/`dxvk` like the detail picker.
+   enum, and legacy `wined3d` values map to `dxmt` for existing bottles.) **Fixed 2026-10-10**:
+   the sheet now offers `dxvk` (default) and `dxmt`.
 4. **Doc drift.** `docs/findings.md`'s "Not yet done" section still says no graphics stack is
    built and the bottle manager was never exercised end to end — both false. The tail of
    `docs/wine-vulkan-internals.md` still presents the MoltenVK fallback as an open lead.

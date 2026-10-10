@@ -430,7 +430,7 @@ struct NewBottleSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var windows = "win10"
-    @State private var graphics = "wined3d"
+    @State private var graphics = "dxvk"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -443,7 +443,7 @@ struct NewBottleSheet: View {
                     Text("Windows 11").tag("win11")
                 }
                 Picker("Graphics", selection: $graphics) {
-                    Text("WineD3D (built in)").tag("wined3d")
+                    Text("DXVK (Direct3D 9/10/11 on KosmicKrisp)").tag("dxvk")
                     Text("DXMT (Direct3D 10/11 on Metal)").tag("dxmt")
                 }
             }
