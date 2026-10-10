@@ -108,12 +108,14 @@ control runs fine          # exit 0
 
 ### The three routes, cheapest first
 
-**0. Free Apple ID, `-unmanaged` variant — free, expected to fail.** The `-unmanaged`
-entitlement is documented by CodeWeavers as the free-account form of the same thing, and
-Hadron's notes say the capability became self-serve on 2026-09-29. But App IDs and profiles
-in the developer portal are a paid-program feature, and a user on wine-devel reported the
-capability being neither visible nor addable on a free account. Worth five minutes to check;
-do not plan around it.
+**0. Free Apple ID, `-unmanaged` variant — free, expected to fail.** CodeWeavers' notes call
+`com.apple.developer.cross-architecture-support-unmanaged` "the same except that it's available
+to free developer accounts", and Hadron's notes say the capability became self-serve on
+2026-09-29 — self-serve meaning no approval request, not no membership. In practice, a
+wine-devel report from September 2026 has a free account unable to see the capability page at
+all, the entitlement absent from Apple's public entitlements reference, and a manual attempt
+rejected as "blocked by security policy". The chain runs entitlement → App ID capability →
+profile, and those live in the paid portal. Worth five minutes to check; do not plan around it.
 
 **1. `amfi-allow` + `csrutil enable --without debug` — the least severe real option.**
 [amfi-allow](https://github.com/Lakr233/amfi-allow) (MIT, tested on macOS 26 and 27) does not
